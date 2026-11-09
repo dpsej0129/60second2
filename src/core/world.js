@@ -78,14 +78,13 @@ export const HOUSE = rect(1760, 250, 200, 220, 'house');
 export const HOME_DOOR = { x: 1760, y: 360 };
 export const HOME_ZONE = rect(1716, 320, 44, 80, 'home-zone'); // 이 안에 들어오면 집 도착
 
-export const START_FIRST = { x: 92, y: 360 }; // 첫 보급: 마트 안쪽에서 시작
-export const START_SUPPLY = { x: 1680, y: 360 }; // 추가 보급: 집 문 바로 앞(도착 구역 밖)에서 시작
+export const START = { x: 92, y: 360 }; // 마트 안쪽에서 시작
 
-// 첫 귀가 때 집 주변에 흩어져 있는 가족 위치(표시용)
+// 집 주변에 흩어져 숨어 있는 가족(데려와야 하는 '물품'처럼 칸을 차지한다)
 export const FAMILY_SPOTS = {
-  dad: { x: 1850, y: 150 },
-  mom: { x: 1930, y: 580 },
-  sis: { x: 1610, y: 650 },
+  dad: { x: 1620, y: 80 },
+  mom: { x: 1900, y: 640 },
+  sis: { x: 1460, y: 680 },
 };
 
 export const STREET = rect(760, 24, 880, 672, 'street'); // 거리 좀비가 나타나는 영역

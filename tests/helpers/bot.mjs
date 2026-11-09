@@ -186,12 +186,17 @@ export function standPoint(shelf, from) {
 export const HOME_TARGET = { x: HOME_ZONE.x + HOME_ZONE.w / 2, y: HOME_ZONE.y + HOME_ZONE.h / 2 };
 
 /**
- * 정해진 선반들을 차례로 들러 물건을 집고 집으로 돌아오는 봇.
+ * 계획(steps)을 차례로 수행하는 봇. 단계:
+ *   { type: 'shelf', shelf }  선반에서 물건 집기
+ *   { type: 'ground', id }    바닥의 가족·물건 데려가기
+ *   { type: 'home' }          집 앞 도착 구역에 가서 가방 비우기
+ *   { type: 'enter' }         집 앞에서 E — 문 잠그고 들어가기(탐색 종료)
+ * 시간이 빠듯해지면 남은 계획을 버리고 집으로 들어간다.
  * next(run) 이 { mx, my, interact } 입력을 돌려준다.
  */
 export class RunBot {
   constructor(
-    shelfIds,
+    plan,
     {
       avoidZombies = true,
       arriveDistance = 8,
@@ -202,10 +207,15 @@ export class RunBot {
       cost = 60,
       threatChase = 90,
       threatWander = 55,
+      margin = 6,
     } = {},
   ) {
-    Object.assign(this, { chaseRadius, wanderRadius, predictRadius, cost, threatChase, threatWander });
-    this.goals = shelfIds.map((id) => SHELVES.find((s) => s.id === id));
+    Object.assign(this, { chaseRadius, wanderRadius, predictRadius, cost, threatChase, threatWander, margin });
+    // 선반 id 문자열 목록도 받는다(그 뒤에 집으로 들어가기).
+    this.steps = plan.map((step) =>
+      typeof step === 'string' ? { type: 'shelf', shelf: SHELVES.find((s) => s.id === step) } : step,
+    );
+    if (!this.steps.some((s) => s.type === 'enter')) this.steps.push({ type: 'enter' });
     this.avoidZombies = avoidZombies;
     this.arriveDistance = arriveDistance;
     this.replanEvery = replanEvery;
@@ -213,27 +223,32 @@ export class RunBot {
     this.target = null;
     this.lastPlan = -Infinity;
     this.pickedCount = null;
+    this.hurried = false;
   }
 
-  currentGoal(run) {
-    while (this.goals.length) {
-      const shelf = this.goals[0];
-      const item = shelf.itemId;
-      if ((run.martStock[shelf.id] ?? 0) <= 0 || !run.inventory.canAdd(item)) {
-        this.goals.shift();
-        this.path = null;
-        continue;
+  currentStep(run) {
+    while (this.steps.length) {
+      const step = this.steps[0];
+      let skip = false;
+      if (step.type === 'shelf') {
+        skip = (run.martStock[step.shelf.id] ?? 0) <= 0 || !run.inventory.canAdd(step.shelf.itemId);
+      } else if (step.type === 'ground') {
+        skip = !run.ground.some((g) => g.id === step.id) || !run.inventory.canAdd(step.id);
+      } else if (step.type === 'home') {
+        skip = run.inventory.isEmpty;
       }
-      return shelf;
+      if (!skip) return step;
+      this.steps.shift();
+      this.path = null;
     }
-    return null;
+    return { type: 'enter' };
   }
 
   next(run) {
     if (this.pickedCount == null) this.pickedCount = run.picked.length;
     if (run.picked.length !== this.pickedCount) {
       this.pickedCount = run.picked.length;
-      this.goals.shift();
+      if (['shelf', 'ground'].includes(this.steps[0]?.type)) this.steps.shift();
       this.path = null;
     }
     if (run.pickup) return { mx: 0, my: 0, interact: false };
@@ -250,22 +265,40 @@ export class RunBot {
       this.homeEta = length / (playerSpeed(run) * 0.8);
       this.homeEtaAt = run.elapsed;
     }
-    const pendingPick = this.goals[0] ? ITEMS[this.goals[0].itemId].slots * 0.6 + 2 : 0;
-    const hurry = this.hurried || run.timeLeft < this.homeEta + pendingPick + 6;
-    if (hurry) this.hurried = true;
-    const shelf = hurry ? null : this.currentGoal(run);
-    const target = shelf ? standPoint(shelf, run.player) : HOME_TARGET;
+    let step = this.currentStep(run);
+    const pending =
+      step.type === 'shelf' ? ITEMS[step.shelf.itemId].slots * 0.6 + 2 : step.type === 'ground' ? 3 : 0;
+    if (!this.hurried && run.timeLeft < this.homeEta + pending + this.margin) this.hurried = true;
+    if (this.hurried) step = { type: 'enter' };
+
+    let target = HOME_TARGET;
+    let ground = null;
+    if (step.type === 'shelf') target = standPoint(step.shelf, run.player);
+    if (step.type === 'ground') {
+      ground = run.ground.find((g) => g.id === step.id);
+      target = { x: ground.x, y: ground.y };
+    }
 
     // 가까이 붙은 좀비가 있으면 우선 피한다.
     const threats = run.zombies
       .map((z) => ({ z, d: dist(z, run.player) }))
       .filter(({ z, d }) => d < (z.chasing ? this.threatChase : this.threatWander))
       .sort((a, b) => a.d - b.d);
+    const safeToPick = !threats.some(({ z, d }) => z.chasing && d < 150);
 
-    if (shelf && dist(run.player, target) <= this.arriveDistance && !threats.some(({ z, d }) => z.chasing && d < 150)) {
+    if (step.type === 'shelf' && dist(run.player, target) <= this.arriveDistance && safeToPick) {
       const preview = pickupPreview(run);
-      if (preview?.shelf.id === shelf.id && dist(run.player, shelf) <= PICK_RANGE) return { mx: 0, my: 0, interact: true };
+      if (preview?.shelf?.id === step.shelf.id && dist(run.player, step.shelf) <= PICK_RANGE) return { mx: 0, my: 0, interact: true };
     }
+    if (step.type === 'ground' && dist(run.player, ground) <= this.arriveDistance + 16 && safeToPick) {
+      const preview = pickupPreview(run);
+      if (preview?.target.ground === ground) return { mx: 0, my: 0, interact: true };
+    }
+    if (step.type === 'home' && run.atHome && run.inventory.isEmpty) {
+      this.steps.shift();
+      return { mx: 0, my: 0, interact: false };
+    }
+    if (step.type === 'enter' && run.atHome) return { mx: 0, my: 0, interact: true };
 
     const needPlan =
       !this.path ||
@@ -352,6 +385,30 @@ RunBot.prototype.bestEscape = function bestEscape(run, wantX, wantY) {
   }
   return best;
 };
+
+/**
+ * 여러 번 오가는 계획을 만든다. legs: [['radio', 'water'], ['dad'], ['mom', 'sis'], ...]
+ * 각 묶음을 집은 뒤 집에 내려놓고, 마지막에 집으로 들어간다. 가족 id는 바닥에서 데려간다.
+ */
+export function scramblePlan(legs, martStock) {
+  const remaining = { ...martStock };
+  const steps = [];
+  for (const leg of legs) {
+    for (const id of leg) {
+      if (['dad', 'mom', 'sis'].includes(id)) {
+        steps.push({ type: 'ground', id });
+        continue;
+      }
+      const shelf = SHELVES.find((s) => s.itemId === id && remaining[s.id] > 0);
+      if (!shelf) continue;
+      remaining[shelf.id] -= 1;
+      steps.push({ type: 'shelf', shelf });
+    }
+    steps.push({ type: 'home' });
+  }
+  steps.push({ type: 'enter' });
+  return steps;
+}
 
 /** 물품 id 목록 → 그 물품이 남아 있는 선반 id 목록 */
 export function shelvesFor(itemIds, martStock) {

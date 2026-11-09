@@ -3,11 +3,11 @@ import { test } from 'node:test';
 import { HUNGER_DEATH, INJURY_WORSEN_DAYS, THIRST_DEATH } from '../src/core/constants.js';
 import { homeGame, resolveAnyEvent } from './helpers/setup.mjs';
 
-test('첫 귀가 때 가족 3명을 한 명씩 데려올지 고른다', () => {
-  const game = homeGame({ bring: [] }); // 이미 진행된 게임과 별개로 흐름만 확인
-  assert.equal(game.phase, 'home');
+test('60초 동안 데려온 가족만 집에 있고, 나머지는 남겨진다', () => {
+  const none = homeGame({ bring: [] });
+  assert.equal(none.phase, 'home');
   assert.deepEqual(
-    game.people.map((p) => [p.id, p.status]),
+    none.people.map((p) => [p.id, p.status]),
     [
       ['me', 'home'],
       ['dad', 'left'],
@@ -15,9 +15,9 @@ test('첫 귀가 때 가족 3명을 한 명씩 데려올지 고른다', () => {
       ['sis', 'left'],
     ],
   );
-  const all = homeGame({ bring: ['dad', 'sis'] });
+  const some = homeGame({ bring: ['dad', 'sis'] });
   assert.deepEqual(
-    all.presentPeople().map((p) => p.id),
+    some.presentPeople().map((p) => p.id),
     ['me', 'dad', 'sis'],
   );
 });
@@ -114,13 +114,14 @@ test('치료하지 않은 부상은 악화되고, 구급약·엄마의 간호로
   }
 });
 
-test('사건을 해결하기 전에는 하루를 마치거나 보급을 나갈 수 없다', () => {
+test('사건을 해결하기 전에는 하루를 마치거나 탐사를 보낼 수 없다', () => {
   for (let seed = 1; seed < 200; seed++) {
     const game = homeGame({ seed, stock: { food: 50, water: 50 } });
     for (let d = 0; d < 6 && game.phase === 'home'; d++) {
       if (game.event && !game.event.resolved) {
         assert.match(game.canEndDay(), /사건/);
-        assert.match(game.canStartSupplyRun(), /사건/);
+        assert.match(game.expeditionReason('dad'), /사건/);
+        assert.equal(game.sendExpedition({ memberId: 'dad' }), false);
         assert.equal(game.endDay(), false);
         return;
       }

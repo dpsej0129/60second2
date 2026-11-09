@@ -182,7 +182,7 @@ const RESCUE = {
     let schedule = null;
     const todo = [];
     if (chain.stage <= 1 && game.stock.battery < 1) todo.push('교신용 건전지를 구해 두자');
-    if (game.stock.flare < 1) todo.push('헬기가 오기 전에 마트에서 신호탄을 구해 두자');
+    if (game.stock.flare < 1) todo.push('헬기가 오기 전에 탐사로 신호탄을 구해 오자');
     if (critical.length) todo.push(`중상자(${critical.map((p) => p.name).join(', ')})를 구급약으로 치료해 두자`);
     const tail = todo.length ? ` ${todo.join('. ')}.` : ' 준비는 끝났다. 그날까지 버티자.';
     if (chain.stage === 1) {
@@ -354,7 +354,7 @@ const GROUP = {
     if (game.stock.food < d.food) short.push(`식량 ${d.food - game.stock.food}`);
     if (game.stock.water < d.water) short.push(`물 ${d.water - game.stock.water}`);
     const gather = short.length
-      ? `지금 재고로는 ${short.join(', ')}만큼 모자라다. 보급으로 채우자.`
+      ? `지금 재고로는 ${short.join(', ')}만큼 모자라다. 탐사로 채우자.`
       : '지금 재고로는 충분하지만, 그날까지 가족이 먹고 나서도 남아 있어야 한다.';
     if (chain.stage === 1) {
       schedule = `거점 사람 방문: ${when(chain)}`;
@@ -494,13 +494,13 @@ const CAR = {
     let next = '';
     let schedule = null;
     const missing = [];
-    if (game.stock.fuel < 2) missing.push(`연료통 ${2 - game.stock.fuel}개(각 2칸)`);
-    if (game.stock.map < 1) missing.push('도로 지도(1칸)');
-    const gear = missing.length ? `마트에서 ${missing.join('와 ')}를 가져오자.` : '연료와 지도는 준비됐다.';
+    if (game.stock.fuel < 2) missing.push(`연료통 ${2 - game.stock.fuel}개`);
+    if (game.stock.map < 1) missing.push('도로 지도');
+    const gear = missing.length ? `탐사로 ${missing.join('와 ')}를 구해 오자.` : '연료와 지도는 준비됐다.';
     if (chain.stage === 1) {
       const canFix = game.stock.toolkit > 0 || isCapable(game.person('sis'));
       schedule = `엔진 수리: ${when(chain)}`;
-      next = `${when(chain)}에 엔진을 손본다. ${canFix ? '수리할 수단은 있다.' : '마트에서 공구 상자(2칸)를 가져오거나 동생이 움직일 수 있어야 한다.'} ${gear}`;
+      next = `${when(chain)}에 엔진을 손본다. ${canFix ? '수리할 수단은 있다.' : '탐사로 공구 상자를 구해 오거나 동생이 움직일 수 있어야 한다.'} ${gear}`;
     } else if (chain.stage === 2) {
       schedule = `출발 점검: ${when(chain)}`;
       next = `${when(chain)}에 출발 여부를 점검한다. ${gear}`;

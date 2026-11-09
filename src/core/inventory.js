@@ -1,6 +1,20 @@
-// 4칸 가방. 물품마다 차지하는 칸 수가 다르다.
+// 4칸 가방. 물품마다(그리고 가족마다) 차지하는 칸 수가 다르다.
 import { INVENTORY_SLOTS } from './constants.js';
 import { ITEMS } from './items.js';
+import { FAMILY_DEFS } from './people.js';
+
+const PERSONS = Object.fromEntries(
+  FAMILY_DEFS.map((d) => [d.id, { id: d.id, name: d.name, short: d.name, slots: d.slots, kind: 'person', note: d.carryNote, color: d.color }]),
+);
+
+export const isPerson = (id) => id in PERSONS;
+
+/** 가방에 넣을 수 있는 것(물품 또는 가족)의 이름·칸 수 */
+export function carryInfo(id) {
+  if (ITEMS[id]) return { ...ITEMS[id], kind: 'item' };
+  if (PERSONS[id]) return PERSONS[id];
+  throw new Error(`가방에 넣을 수 없는 것: ${id}`);
+}
 
 export class Inventory {
   constructor(capacity = INVENTORY_SLOTS) {
@@ -9,7 +23,7 @@ export class Inventory {
   }
 
   get used() {
-    return this.items.reduce((sum, id) => sum + ITEMS[id].slots, 0);
+    return this.items.reduce((sum, id) => sum + carryInfo(id).slots, 0);
   }
 
   get free() {
@@ -20,14 +34,19 @@ export class Inventory {
     return this.items.length === 0;
   }
 
-  canAdd(itemId) {
-    return ITEMS[itemId].slots <= this.free;
+  canAdd(id) {
+    return carryInfo(id).slots <= this.free;
   }
 
-  add(itemId) {
-    if (!this.canAdd(itemId)) return false;
-    this.items.push(itemId);
+  add(id) {
+    if (!this.canAdd(id)) return false;
+    this.items.push(id);
     return true;
+  }
+
+  /** 전부 꺼낸다 */
+  takeAll() {
+    return this.items.splice(0, this.items.length);
   }
 
   removeAt(index) {
@@ -35,11 +54,12 @@ export class Inventory {
     return this.items.splice(index, 1)[0];
   }
 
-  /** 화면에 칸을 그릴 때 쓰는 배치: [{ index, itemId, start, slots }] */
+  /** 화면에 칸을 그릴 때 쓰는 배치: [{ index, itemId, start, slots, kind }] */
   layout() {
     let start = 0;
     return this.items.map((itemId, index) => {
-      const cell = { index, itemId, start, slots: ITEMS[itemId].slots };
+      const info = carryInfo(itemId);
+      const cell = { index, itemId, start, slots: info.slots, kind: info.kind, name: info.name, note: info.note };
       start += cell.slots;
       return cell;
     });

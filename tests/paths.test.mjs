@@ -24,16 +24,19 @@ function jumpToStage(game, chainId, stage, data = {}) {
 const option = (view, id) => view.options.find((o) => o.id === id);
 
 for (const target of ['rescue', 'group', 'car']) {
-  test(`승리 경로 「${target}」: 마트 탈출 → 가족 선택 → 사건 → 반복 보급 → 결말까지 실제로 도달한다`, () => {
+  test(`승리 경로 「${target}」: 60초 탐색 → 사건 → 반복 탐사 → 결말까지 실제로 도달한다`, () => {
+    // 탐사에서 가족을 잃는 등 운이 나쁘면 질 수도 있다. 그래도 대부분은 그 경로로 이긴다.
+    let wins = 0;
     for (const seed of [1, 2, 3, 4, 5]) {
       const game = playGame(new Game({ seed, zombies: false }), { target, maxDays: 40 });
-      assert.equal(game.phase, 'ending', `seed ${seed}`);
-      assert.equal(game.ending.type, 'victory', `seed ${seed}: ${game.ending.id}`);
-      assert.equal(game.ending.id, target, `seed ${seed}`);
-      assert.ok(game.runs >= 2, '추가 보급을 반복했다');
-      const path = game.pathsView().find((p) => p.id === target);
-      assert.equal(path.status, 'done');
+      assert.equal(game.phase, 'ending', `seed ${seed}: 결말에 도달한다`);
+      if (game.ending.type !== 'victory') continue;
+      assert.equal(game.ending.id, target, `seed ${seed}: 다른 경로로 이기지 않는다`);
+      assert.ok(game.expeditions >= 2, '탐사를 여러 번 보냈다');
+      assert.equal(game.pathsView().find((p) => p.id === target).status, 'done');
+      wins += 1;
     }
+    assert.ok(wins >= 4, `5게임 중 ${wins}승`);
   });
 }
 
@@ -189,4 +192,12 @@ test('경로 안내는 아직 모자란 것만 알려 주고, 놓친 기회의 �
   jumpToStage(g2, 'rescue', 0);
   g2.chooseOption('ignore');
   assert.match(g2.pathsView().find((p) => p.id === 'rescue').next, /남은 기회 2번/);
+});
+
+test('첫 사건이 진행 중일 때는 아직 놓친 기회로 표시하지 않는다', () => {
+  const game = homeGame({ seed: 29, stock: { food: 99, water: 99 } });
+  jumpToStage(game, 'group', 0);
+  assert.equal(game.pathsView().find((p) => p.id === 'group').status, 'hidden');
+  game.chooseOption('refuse');
+  assert.equal(game.pathsView().find((p) => p.id === 'group').status, 'missed');
 });

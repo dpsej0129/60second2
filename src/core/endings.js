@@ -22,7 +22,12 @@ export const ENDINGS = {
   timeout: {
     type: 'defeat',
     title: '시간 초과',
-    text: '60초 안에 집에 돌아오지 못했다. 사방에서 몰려든 좀비 떼에 길이 막혔다.',
+    text: '60초가 끝났을 때 집 밖에 있었다. 사방에서 몰려든 좀비 떼에 길이 막혔다.',
+  },
+  lost: {
+    type: 'defeat',
+    title: '돌아오지 못한 탐사',
+    text: '마트로 떠난 뒤 다시는 집 문을 두드리지 못했다. 남은 가족은 끝내 소식을 듣지 못했다.',
   },
   died: {
     type: 'defeat',

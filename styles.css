@@ -303,9 +303,49 @@ kbd {
   }
 }
 
+.hud-mid {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .hud-goal {
   font-weight: 700;
   color: var(--accent);
+}
+
+.hud-home {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.hud-home .hud-label {
+  display: inline;
+}
+
+.home-items {
+  color: #9fe0a8;
+}
+
+.home-family {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.fam {
+  border: 1px solid var(--c);
+  border-radius: 999px;
+  padding: 0 8px;
+  color: var(--muted);
+}
+
+.fam.safe {
+  background: var(--c);
+  color: #111;
+  font-weight: 700;
 }
 
 .bag-cells {
@@ -342,6 +382,11 @@ kbd {
   font-weight: 500;
   font-size: 11px;
   color: #e7c9a5;
+}
+
+.bag-item.person {
+  border-color: #7fc8a9;
+  background: #1d3a2e;
 }
 
 .bag-key {
@@ -406,7 +451,8 @@ kbd {
   color: var(--bad);
 }
 
-.run-prompt.busy {
+.run-prompt.busy,
+.run-prompt.home {
   border-color: var(--ok);
 }
 
@@ -482,40 +528,6 @@ kbd {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
-}
-
-/* ── 가족 선택 ── */
-
-.family-screen {
-  max-width: 760px;
-  margin: 4vh auto 0;
-}
-
-.family-card h2 {
-  margin: 0;
-}
-
-.family-card h2 small {
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 500;
-  margin-left: 6px;
-}
-
-.family-card p b {
-  display: inline-block;
-  min-width: 70px;
-  color: var(--muted);
-}
-
-.family-card .cost b:not(:first-child) {
-  min-width: 0;
-  color: var(--accent);
-}
-
-.decisions {
-  color: var(--muted);
-  padding-left: 18px;
 }
 
 .person-head {
@@ -753,7 +765,7 @@ kbd {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -928,6 +940,150 @@ kbd {
   color: var(--muted);
 }
 
+/* ── 집 안 장면 ── */
+
+.shelter {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+  background: #3a3129;
+}
+
+.shelter-count {
+  font-size: 12px;
+  font-weight: 700;
+  fill: #f1e6cf;
+}
+
+.shelter-empty {
+  font-size: 14px;
+  fill: #a8977c;
+}
+
+.shelter-name {
+  font-size: 14px;
+  font-weight: 700;
+  fill: #f6efe2;
+}
+
+.shelter-note {
+  font-size: 11px;
+  font-weight: 700;
+  fill: #3a2416;
+}
+
+.shelter-person.weak {
+  opacity: 0.72;
+}
+
+.shelter .bob {
+  animation: shelter-bob 2.8s ease-in-out infinite;
+}
+
+.shelter .bubble {
+  animation: shelter-bubble 1.8s ease-in-out infinite alternate;
+}
+
+.shelter .lamp-glow {
+  animation: lamp 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes shelter-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes shelter-bubble {
+  from {
+    transform: translate(30px, -142px);
+  }
+  to {
+    transform: translate(30px, -147px);
+  }
+}
+
+@keyframes lamp {
+  from {
+    opacity: 0.05;
+  }
+  to {
+    opacity: 0.13;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelter .bob,
+  .shelter .bubble,
+  .shelter .lamp-glow {
+    animation: none;
+  }
+}
+
+/* ── 탐사 ── */
+
+.choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.choice.on {
+  border-color: var(--accent);
+  background: #2b2614;
+}
+
+.choice.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.choice small {
+  color: var(--muted);
+}
+
+.expedition-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.expedition-options select {
+  margin-left: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.night-report.bad {
+  border-color: var(--bad);
+}
+
 /* ── 결말 ── */
 
 .ending-screen {
@@ -1020,7 +1176,7 @@ kbd {
   .home-grid [data-ref='family'] {
     order: 3;
   }
-  .home-grid [data-ref='bag'] {
+  .home-grid [data-ref='expedition'] {
     order: 4;
   }
   .home-grid [data-ref='actions'] {

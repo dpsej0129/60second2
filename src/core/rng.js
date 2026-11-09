@@ -46,6 +46,16 @@ export class Rng {
     return list[Math.floor(this.next() * list.length)];
   }
 
+  /** 섞은 새 배열 (Fisher–Yates) */
+  shuffle(list) {
+    const out = [...list];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(this.next() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
   weighted(list, weightOf) {
     const total = list.reduce((sum, item) => sum + weightOf(item), 0);
     let r = this.next() * total;

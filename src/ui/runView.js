@@ -1,7 +1,8 @@
 // 60초 실시간 구간 화면: 캔버스 지도 + 남은 시간·가방·줍기 안내 HUD + 키보드/터치 입력.
 import { INVENTORY_SLOTS, SIM_STEP } from '../core/constants.js';
+import { carryInfo, isPerson } from '../core/inventory.js';
 import { ITEMS } from '../core/items.js';
-import { pickupPreview, zombieSight } from '../core/run.js';
+import { pickupPreview, playerSpeed, zombieSight } from '../core/run.js';
 import {
   CARS,
   FAMILY_SPOTS,
@@ -11,7 +12,7 @@ import {
   MART_DOORS,
   RACKS,
   SHELVES,
-  START_FIRST,
+  START,
   WALLS,
   WORLD,
   inMart,
@@ -71,6 +72,7 @@ export class RunView {
     this.accumulator = 0;
     this.bagSignature = null;
     this.toastSignature = null;
+    this.homeSignature = null;
     this.mount();
   }
 
@@ -85,7 +87,10 @@ export class RunView {
             <span class="hud-label">남은 시간</span>
             <span class="hud-time" data-ref="time">60.0</span>
           </div>
-          <div class="hud-goal" data-ref="goal"></div>
+          <div class="hud-mid">
+            <div class="hud-goal" data-ref="goal"></div>
+            <div class="hud-home" data-ref="home"></div>
+          </div>
           <div class="hud-bag">
             <span class="hud-label">가방 <b data-ref="bagCount">0/${INVENTORY_SLOTS}칸</b></span>
             <div class="bag-cells" data-ref="bag"></div>
@@ -101,7 +106,7 @@ export class RunView {
         </div>
         <div class="run-controls">
           <button type="button" class="btn" data-ref="pickBtn">줍기 <kbd>E</kbd></button>
-          <p class="run-help">이동 <kbd>WASD</kbd>·<kbd>방향키</kbd> 또는 화면을 누른 채 끌기 · 줍기 <kbd>E</kbd>/<kbd>Space</kbd> · 내려놓기 <kbd>1</kbd>~<kbd>4</kbd> 또는 가방 칸 누르기</p>
+          <p class="run-help">이동 <kbd>WASD</kbd>·<kbd>방향키</kbd> 또는 화면을 누른 채 끌기 · 줍기·데려가기 <kbd>E</kbd>/<kbd>Space</kbd> · 내려놓기 <kbd>1</kbd>~<kbd>4</kbd> 또는 가방 칸 누르기 · 집 앞에서 <kbd>E</kbd> = 문 잠그고 들어가기</p>
         </div>
       </section>`;
     this.refs = {};
@@ -149,15 +154,16 @@ export class RunView {
   briefingHtml() {
     return `
       <div class="briefing">
-        <p class="kicker">첫 보급</p>
+        <p class="kicker">60초</p>
         <h2>대형 마트 안에 갇혔다</h2>
         <p>정전된 매장 밖에서 좀비의 신음이 들린다. 카운트다운이 시작되면 좀비가 몰려온다.
-           <b>60초 안에</b> 물자를 챙겨 지도 오른쪽 끝의 <b>집</b>까지 달려야 한다. 물건을 고르는 시간도 60초에 포함된다.</p>
+           <b>60초 동안</b> 마트와 지도 오른쪽 끝의 <b>집</b>을 오가며 물자와 가족을 집으로 옮겨야 한다.</p>
         <ul>
           <li>가방은 <b>4칸</b>. 생수·통조림은 1칸, 대형 구급상자·생수 묶음 같은 큰 물건은 2칸을 차지한다.</li>
-          <li>물건을 집는 동안은 움직일 수 없고, 소리 때문에 좀비가 알아채기 쉽다.</li>
-          <li>가방이 무거울수록 느려진다. 선반과 벽 뒤에 숨으면 좀비가 보지 못한다.</li>
-          <li>집 주변에 흩어진 가족은 집에 도착한 뒤 데려올지 정한다.</li>
+          <li>집 앞 <b>도착 구역</b>에 들어서면 가방이 저절로 비워지고, 다시 나가서 더 가져올 수 있다.</li>
+          <li>집 주변에 숨은 <b>가족도 칸을 차지한다</b>(아빠 3칸, 엄마·동생 2칸). 데려오지 못한 가족은 남겨진다.</li>
+          <li><b>60초가 끝날 때 도착 구역 안에 있어야 산다.</b> 일찍 끝내려면 도착 구역에서 <kbd>E</kbd>로 문을 잠그고 들어간다.</li>
+          <li>물건을 집는 동안은 움직일 수 없고, 소리 때문에 좀비가 알아채기 쉽다. 선반과 벽 뒤에 숨으면 좀비가 보지 못한다.</li>
         </ul>
         <button type="button" class="btn primary big" data-action="start-run">카운트다운 시작 <kbd>Enter</kbd></button>
       </div>`;
@@ -272,11 +278,11 @@ export class RunView {
     this.finishing = true;
     this.lastRun = lastRun;
     const home = lastRun?.outcome === 'home';
-    const title = home ? '집에 도착했다!' : ending?.title ?? '실패';
+    const title = home ? (lastRun.endedBy === 'enter' ? '문을 잠그고 집에 들어갔다' : '60초가 끝났다 — 집 안으로!') : ending?.title ?? '실패';
     const detail = home
-      ? `남은 시간 ${lastRun.timeLeft.toFixed(1)}초 · 가져온 물품 ${lastRun.carried.length}개`
+      ? `물품 ${lastRun.items.length}개 · 가족 ${lastRun.family.length}명을 집에 들였다${lastRun.endedBy === 'enter' ? ` · 남은 시간 ${lastRun.timeLeft.toFixed(1)}초` : ''}`
       : lastRun?.outcome === 'timeout'
-        ? '60초가 지났다.'
+        ? '60초가 끝났을 때 집 밖에 있었다.'
         : '좀비에게 붙잡혔다.';
     this.refs.overlay.hidden = false;
     this.refs.overlay.innerHTML = `<div class="run-result ${home ? 'good' : 'bad'}"><h2>${esc(title)}</h2><p>${esc(detail)}</p></div>`;
@@ -285,7 +291,7 @@ export class RunView {
     setTimeout(() => {
       this.destroy();
       done();
-    }, home ? 900 : 1400);
+    }, home ? 1100 : 1400);
   }
 
   destroy() {
@@ -302,7 +308,7 @@ export class RunView {
   renderHud() {
     const run = this.currentRun();
     const timeLeft = run ? run.timeLeft : 60;
-    const { time, timerBox, goal, bag, bagCount, prompt, toasts, pickBtn } = this.refs;
+    const { time, timerBox, goal, home, bag, bagCount, prompt, toasts, pickBtn } = this.refs;
     time.textContent = timeLeft.toFixed(1);
     timerBox.classList.toggle('warn', timeLeft <= 20 && timeLeft > 10);
     timerBox.classList.toggle('danger', timeLeft <= 10);
@@ -313,43 +319,72 @@ export class RunView {
       this.bagSignature = signature;
       bagCount.textContent = `${inventory.used}/${inventory.capacity}칸`;
       const cells = inventory.layout().map(
-        (cell) => `<button type="button" class="bag-item" style="grid-column: span ${cell.slots}" data-index="${cell.index}" title="${esc(ITEMS[cell.itemId].name)} 내려놓기 (${cell.index + 1})">
-            <span class="bag-key">${cell.index + 1}</span>${esc(ITEMS[cell.itemId].name)}<small>${cell.slots}칸</small></button>`,
+        (cell) => `<button type="button" class="bag-item ${cell.kind}" style="grid-column: span ${cell.slots}" data-index="${cell.index}" title="${esc(cell.name)} 내려놓기 (${cell.index + 1})">
+            <span class="bag-key">${cell.index + 1}</span>${esc(cell.name)}<small>${cell.slots}칸</small></button>`,
       );
       for (let i = 0; i < inventory.free; i++) cells.push('<span class="bag-empty">빈칸</span>');
       bag.innerHTML = cells.join('');
     }
 
+    // 집에 들여놓은 것
+    const delivered = run?.delivered ?? [];
+    const homeSig = `${delivered.join(',')}|${run?.atHome}`;
+    if (homeSig !== this.homeSignature) {
+      this.homeSignature = homeSig;
+      const counts = {};
+      for (const id of delivered) if (!isPerson(id)) counts[id] = (counts[id] ?? 0) + 1;
+      const itemsText = Object.entries(counts)
+        .map(([id, n]) => `${ITEMS[id].short}${n > 1 ? `×${n}` : ''}`)
+        .join(' · ');
+      const family = FAMILY_DEFS.map((def) => {
+        const safe = delivered.includes(def.id);
+        return `<span class="fam ${safe ? 'safe' : ''}" style="--c:${def.color}">${safe ? '✔' : '…'} ${esc(def.name)}</span>`;
+      }).join('');
+      home.innerHTML = `<span class="hud-label">집에 들여놓은 것</span><span class="home-items">${esc(itemsText || '아직 없음')}</span><span class="home-family">${family}</span>`;
+    }
+
     if (!run) {
-      goal.textContent = '목표: 물자를 챙겨 집으로';
+      goal.textContent = '목표: 물자와 가족을 집으로';
       prompt.hidden = true;
       pickBtn.disabled = true;
       return;
     }
-    goal.textContent =
-      run.mode === 'supply' && !run.enteredMart
-        ? '목표: 왼쪽 마트로 가서 물자를 챙기기'
-        : `목표: 집으로 돌아가기 (${run.mode === 'first' ? '오른쪽 끝' : '오른쪽'})`;
+
+    const toHome = Math.hypot(HOME_ZONE.x + HOME_ZONE.w / 2 - run.player.x, HOME_ZONE.y + HOME_ZONE.h / 2 - run.player.y);
+    const eta = toHome / playerSpeed(run);
+    if (run.atHome) goal.textContent = run.timeLeft > 0 ? '집 문간: 여기 있으면 안전하다 · 다시 나가도 된다' : '';
+    else if (run.timeLeft < eta + 5) goal.textContent = `⚠ 서둘러 집으로! 집까지 약 ${eta.toFixed(1)}초`;
+    else if (!inventory.isEmpty) goal.textContent = '목표: 집 앞 도착 구역으로 가져가기 (오른쪽)';
+    else goal.textContent = '목표: 마트에서 물자를, 집 주변에서 가족을 데려오기';
 
     const preview = run.outcome ? null : pickupPreview(run);
     if (run.pickup) {
-      const item = ITEMS[run.pickup.itemId];
+      const item = carryInfo(run.pickup.id);
       prompt.hidden = false;
       prompt.className = 'run-prompt busy';
-      prompt.innerHTML = `${esc(item.name)} 집는 중… ${(run.pickup.duration - run.pickup.t).toFixed(1)}초 <small>움직이면 취소</small>`;
+      prompt.innerHTML = `${esc(item.name)} ${item.kind === 'person' ? '부축하는 중' : '집는 중'}… ${(run.pickup.duration - run.pickup.t).toFixed(1)}초 <small>움직이면 취소</small>`;
     } else if (preview) {
       const { item, stock, need, free, canFit, seconds } = preview;
+      const person = item.kind === 'person';
       prompt.hidden = false;
       let state;
       if (stock <= 0) state = '<em class="bad">선반이 비었다</em>';
       else if (!canFit) state = `<em class="bad">칸 부족 — ${need}칸 필요, 남은 칸 ${free}</em>`;
-      else state = `<em class="ok">[E] 집기</em>`;
+      else state = `<em class="ok">[E] ${person ? '데려가기' : '집기'}</em>`;
       prompt.className = 'run-prompt';
-      prompt.innerHTML = `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)} · 줍는 시간 ${seconds.toFixed(1)}초 · 남은 수량 ${stock} ${state}`;
+      prompt.innerHTML = person
+        ? `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)} · 부축하는 시간 ${seconds.toFixed(1)}초 ${state}`
+        : `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)} · 줍는 시간 ${seconds.toFixed(1)}초${preview.shelf ? ` · 남은 수량 ${stock}` : ' · 바닥에 놓인 것'} ${state}`;
+    } else if (run.atHome) {
+      prompt.hidden = false;
+      prompt.className = 'run-prompt home';
+      prompt.innerHTML = `<strong>집 문간</strong> · 가방이 비워졌다 · <em class="ok">[E] 문을 잠그고 들어가기</em> <small>남은 ${run.timeLeft.toFixed(1)}초를 쓰지 않고 끝낸다</small>`;
     } else {
       prompt.hidden = true;
     }
-    pickBtn.disabled = !preview || preview.stock <= 0 || !preview.canFit || !!run.pickup;
+    const canAct = preview ? preview.stock > 0 && preview.canFit && !run.pickup : run.atHome;
+    pickBtn.disabled = !canAct;
+    pickBtn.innerHTML = !preview && run.atHome ? '문 잠그고 들어가기 <kbd>E</kbd>' : '줍기 <kbd>E</kbd>';
 
     const toastSig = run.toasts.map((t) => t.text).join('|');
     if (toastSig !== this.toastSignature) {
@@ -363,7 +398,7 @@ export class RunView {
   draw() {
     const { ctx } = this;
     const run = this.currentRun();
-    const player = run ? run.player : { ...START_FIRST, r: 14, faceX: 1, faceY: 0 };
+    const player = run ? run.player : { ...START, r: 14, faceX: 1, faceY: 0 };
     this.camX = Math.max(0, Math.min(WORLD.w - this.viewW, player.x - this.viewW / 2));
     this.camY = Math.max(0, Math.min(WORLD.h - this.viewH, player.y - this.viewH / 2));
     if (this.viewH >= WORLD.h) this.camY = (WORLD.h - this.viewH) / 2;
@@ -376,7 +411,7 @@ export class RunView {
     this.drawWorld(run);
     const preview = run && !run.outcome ? pickupPreview(run) : null;
     this.drawShelves(run, preview);
-    this.drawFamily(run);
+    this.drawGround(run, preview);
     if (run) for (const z of run.zombies) this.drawZombie(z);
     this.drawPlayer(run, player);
 
@@ -454,7 +489,7 @@ export class RunView {
     for (const shelf of SHELVES) {
       const item = ITEMS[shelf.itemId];
       const stock = stockOf(shelf);
-      const active = preview?.shelf.id === shelf.id;
+      const active = preview?.shelf?.id === shelf.id;
       const w = 66;
       const h = 34;
       ctx.globalAlpha = stock > 0 ? 1 : 0.45;
@@ -474,19 +509,65 @@ export class RunView {
     ctx.textAlign = 'left';
   }
 
-  drawFamily(run) {
-    if (this.game.phase !== 'ready' && run?.mode !== 'first') return;
+  /** 바닥에 있는 것: 집 주변에 숨은 가족, 내려놓은 물건 */
+  drawGround(run, preview) {
     const { ctx } = this;
+    const ground = run
+      ? run.ground
+      : FAMILY_DEFS.map((def) => ({ uid: def.id, id: def.id, ...FAMILY_SPOTS[def.id] }));
     ctx.textAlign = 'center';
-    for (const def of FAMILY_DEFS) {
-      const spot = FAMILY_SPOTS[def.id];
-      ctx.fillStyle = def.color;
-      ctx.beginPath();
-      ctx.arc(spot.x, spot.y, 12, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = COLORS.label;
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(def.name, spot.x, spot.y - 18);
+    for (const g of ground) {
+      const info = carryInfo(g.id);
+      const active = preview?.target.kind === 'ground' && preview.target.ground === g;
+      if (info.kind === 'person') {
+        ctx.fillStyle = info.color;
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = active ? COLORS.highlight : '#ffffff';
+        ctx.lineWidth = active ? 4 : 2;
+        ctx.stroke();
+        ctx.fillStyle = COLORS.label;
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(info.name, g.x, g.y - 22);
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#f0b072';
+        ctx.fillText(`${info.slots}칸`, g.x, g.y + 28);
+        // 도와 달라는 손짓
+        const wave = Math.sin(performance.now() / 220 + g.x) * 4;
+        ctx.strokeStyle = info.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(g.x + 10, g.y - 4);
+        ctx.lineTo(g.x + 20, g.y - 14 + wave);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = 'rgba(20, 20, 22, 0.9)';
+        ctx.fillRect(g.x - 28, g.y - 12, 56, 24);
+        ctx.strokeStyle = active ? COLORS.highlight : '#c98b4a';
+        ctx.lineWidth = active ? 3 : 1.5;
+        ctx.strokeRect(g.x - 28, g.y - 12, 56, 24);
+        ctx.fillStyle = COLORS.label;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(info.short, g.x, g.y + 4);
+      }
+    }
+    // 집에 들여놓은 가족은 문 옆에 작게 보여 준다
+    if (run) {
+      const safe = run.delivered.filter(isPerson);
+      safe.forEach((id, i) => {
+        const info = carryInfo(id);
+        ctx.fillStyle = info.color;
+        ctx.beginPath();
+        ctx.arc(HOUSE.x + 40 + i * 34, HOUSE.y + HOUSE.h - 30, 10, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      const items = run.delivered.filter((id) => !isPerson(id)).length;
+      if (items) {
+        ctx.fillStyle = '#9fe0a8';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(`물품 ${items}개`, HOUSE.x + HOUSE.w / 2, HOUSE.y + 40);
+      }
     }
     ctx.textAlign = 'left';
   }
@@ -529,11 +610,8 @@ export class RunView {
   }
 
   drawObjectiveArrow(run, p) {
-    if (!run) return;
-    const target =
-      run.mode === 'supply' && !run.enteredMart
-        ? { x: MART_DOORS[0].outside.x, y: MART_DOORS[0].outside.y, label: '마트' }
-        : { x: HOME_ZONE.x + HOME_ZONE.w / 2, y: HOME_ZONE.y + HOME_ZONE.h / 2, label: '집' };
+    if (!run || run.atHome) return;
+    const target = { x: HOME_ZONE.x + HOME_ZONE.w / 2, y: HOME_ZONE.y + HOME_ZONE.h / 2, label: '집' };
     const sx = target.x - this.camX;
     const sy = target.y - this.camY;
     if (sx > 20 && sx < this.viewW - 20 && sy > 20 && sy < this.viewH - 20) return;

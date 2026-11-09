@@ -8,7 +8,7 @@
 import { Game } from './core/game.js';
 import { randomSeed } from './core/rng.js';
 import { RunView } from './ui/runView.js';
-import { renderEnding, renderFamily, renderHome, renderTitle } from './ui/screens.js';
+import { renderEnding, renderHome, renderTitle } from './ui/screens.js';
 
 const params = new URLSearchParams(location.search);
 const OPTIONS = {
@@ -24,6 +24,7 @@ class App {
     this.game = null;
     this.runView = null;
     this.unsubscribe = null;
+    this.ui = { expedition: { memberId: null, targetId: 'supplies', withWeapon: false } };
     root.addEventListener('click', (e) => this.onClick(e));
     root.addEventListener('change', (e) => this.onChange(e));
     root.addEventListener('submit', (e) => this.onSubmit(e));
@@ -39,6 +40,7 @@ class App {
 
   newGame(seed) {
     this.teardown();
+    this.ui.expedition = { memberId: null, targetId: 'supplies', withWeapon: false };
     this.game = new Game({ seed: Number.isFinite(seed) && seed > 0 ? seed : randomSeed(), zombies: OPTIONS.zombies });
     if (OPTIONS.debug) window.game = this.game;
     this.unsubscribe = this.game.subscribe(() => this.render());
@@ -78,8 +80,7 @@ class App {
   renderScreen() {
     const game = this.game;
     if (!game || this.runView) return;
-    if (game.phase === 'family') this.root.innerHTML = renderFamily(game);
-    else if (game.phase === 'home') this.root.innerHTML = renderHome(game);
+    if (game.phase === 'home') this.root.innerHTML = renderHome(game, this.ui);
     else if (game.phase === 'ending') this.root.innerHTML = renderEnding(game);
     document.title = game.phase === 'home' ? `${game.day}일차 · 마트 탈출 60초` : '마트 탈출 60초';
   }
@@ -93,6 +94,13 @@ class App {
   }
 
   onChange(e) {
+    const draft = e.target.closest('[data-draft]');
+    if (draft && this.game) {
+      const key = draft.dataset.draft;
+      this.ui.expedition[key] = draft.type === 'checkbox' ? draft.checked : draft.value;
+      this.renderScreen();
+      return;
+    }
     const el = e.target.closest('[data-action="ration"]');
     if (!el || !this.game) return;
     if (!this.game.setRation(el.dataset.person, el.dataset.kind, el.checked)) {
@@ -105,22 +113,13 @@ class App {
     const el = e.target.closest('button[data-action]');
     if (!el || el.disabled) return;
     const game = this.game;
-    const { action, person, option, index } = el.dataset;
+    const { action, person, option } = el.dataset;
     switch (action) {
-      case 'family':
-        game.decideFamily(person, el.dataset.bring === '1');
-        break;
       case 'choose': {
         const result = game.chooseOption(option);
         if (!result.ok) this.flash(result.reason);
         break;
       }
-      case 'deposit':
-        game.deposit(Number(index));
-        break;
-      case 'deposit-all':
-        game.depositAll();
-        break;
       case 'med':
         game.useMed(person);
         break;
@@ -133,9 +132,11 @@ class App {
       case 'ration-none':
         game.setAllRations(false);
         break;
-      case 'supply':
-        game.startSupplyRun();
+      case 'send-expedition': {
+        const draft = this.ui.expedition;
+        game.sendExpedition({ memberId: person, targetId: draft.targetId, withWeapon: draft.withWeapon });
         break;
+      }
       case 'end-day':
         game.endDay();
         window.scrollTo({ top: 0, behavior: 'smooth' });

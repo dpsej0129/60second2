@@ -25,7 +25,9 @@ export const FAMILY_DEFS = [
     trait: 'guard',
     color: '#e0a458',
     initialHealth: 0,
-    where: '집 앞 골목, 주차된 트럭 밑에 숨어 있다.',
+    slots: 3,
+    carryNote: '덩치가 커서 3칸을 차지한다',
+    where: '집 북쪽 골목, 버려진 트럭 뒤에 숨어 있다.',
     perk: '좀비 습격·약탈자 사건에서 문을 지킨다. 생존자 집단과 교섭할 때 더 나은 조건을 끌어낸다.',
   },
   {
@@ -35,7 +37,9 @@ export const FAMILY_DEFS = [
     trait: 'medic',
     color: '#7fc8a9',
     initialHealth: 0,
-    where: '옆집 담벼락 뒤에 몸을 낮추고 있다.',
+    slots: 2,
+    carryNote: '2칸을 차지한다',
+    where: '집 뒤편 담장 아래에 몸을 낮추고 있다.',
     perk: '하루 한 번 부상자를 간호해 악화를 막는다. 구급약 없이 응급처치하거나 다른 생존자를 치료할 수 있다.',
   },
   {
@@ -45,7 +49,9 @@ export const FAMILY_DEFS = [
     trait: 'mechanic',
     color: '#b59cff',
     initialHealth: 1,
-    where: '놀이터 미끄럼틀 아래. 발목을 다쳐 혼자 움직이지 못한다.',
+    slots: 2,
+    carryNote: '발목을 다쳐 업어 와야 한다 · 2칸',
+    where: '남쪽 놀이터 미끄럼틀 아래. 발목을 다쳐 혼자 움직이지 못한다.',
     perk: '무전기 없이도 라디오를 개조해 교신하고, 엔진을 고칠 수 있다. 다만 다친 상태라 구급약이 필요하다.',
   },
 ];
@@ -64,7 +70,8 @@ export function createPerson(def, status) {
     trait: def.trait,
     color: def.color,
     isPlayer: def.id === PLAYER_DEF.id,
-    // home: 집에 있음 / outside: 아직 데려올지 정하지 않음 / left: 두고 옴 / lost: 다시 만날 수 없음 / dead: 사망
+    // home: 집에 있음 / outside: 60초 탐색 중 아직 집 밖 / left: 두고 옴 / away: 탐사 중
+    // lost: 다시 만날 수 없음 / dead: 사망
     status,
     hunger: 0,
     thirst: 0,

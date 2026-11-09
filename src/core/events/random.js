@@ -61,8 +61,9 @@ export const RANDOM_EVENTS = [
         id: 'hide',
         label: '불을 끄고 숨죽인다',
         resolve(ctx) {
-          if (ctx.rng.chance(0.5)) return '숨소리조차 죽인 채 버텼다. 좀비들은 지나갔다.';
-          const victim = ctx.rng.pick(ctx.present());
+          const present = ctx.present();
+          if (!present.length || ctx.rng.chance(0.5)) return '숨소리조차 죽인 채 버텼다. 좀비들은 지나갔다.';
+          const victim = ctx.rng.pick(present);
           ctx.injure(victim);
           const food = ctx.take('food', 1);
           const water = ctx.take('water', 1);
@@ -255,8 +256,9 @@ export const RANDOM_EVENTS = [
         label: '아까우니 그냥 둔다',
         note: '누군가 탈이 날 수 있다',
         resolve(ctx) {
-          if (ctx.rng.chance(0.5)) {
-            const victim = ctx.rng.pick(ctx.present());
+          const present = ctx.present();
+          if (present.length && ctx.rng.chance(0.5)) {
+            const victim = ctx.rng.pick(present);
             ctx.injure(victim);
             return `${josa(victim.name, '이/가')} 상한 음식을 먹고 심한 배탈로 앓아누웠다. (${victim.name}: ${healthLabel(victim.health).text})`;
           }

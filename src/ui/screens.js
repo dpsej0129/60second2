@@ -1,10 +1,12 @@
-// 실시간 구간 밖의 화면들: 시작, 가족 선택, 집 생존(하루 단위), 결말.
-import { HUNGER_DEATH, INJURY_WORSEN_DAYS, MAX_QUIET_DAYS, RUN_SECONDS, THIRST_DEATH } from '../core/constants.js';
+// 실시간 구간 밖의 화면들: 시작, 집 생존(하루 단위), 결말.
+import { EXPEDITION_DAYS, HUNGER_DEATH, INJURY_WORSEN_DAYS, MAX_QUIET_DAYS, THIRST_DEATH } from '../core/constants.js';
 import { CHAIN_DEFS } from '../core/events/index.js';
+import { targetOf } from '../core/expedition.js';
 import { ITEMS, RESOURCES } from '../core/items.js';
-import { FAMILY_DEFS, deathRisk, defOf, healthLabel, hungerLabel, incapableReason, thirstLabel } from '../core/people.js';
+import { deathRisk, defOf, healthLabel, hungerLabel, incapableReason, thirstLabel } from '../core/people.js';
 import { josa } from '../core/text.js';
 import { esc, when } from './dom.js';
+import { renderShelter } from './shelter.js';
 
 // ── 시작 화면 ────────────────────────────────────
 
@@ -16,9 +18,9 @@ export function renderTitle({ seed }) {
       <p class="tagline">정전된 대형 마트, 몰려드는 좀비, 그리고 집 주변에 흩어진 가족.<br />
         60초 안에 내린 선택이 남은 날들을 결정한다.</p>
       <ol class="rules">
-        <li><b>마트 탈출</b> — 60초 안에 4칸 가방에 물자를 챙겨 집까지 달린다. 물건을 고르는 시간도 60초에 포함된다.</li>
-        <li><b>가족</b> — 집 주변에 흩어진 가족 3명을 데려올지 한 명씩 정한다. 식구가 늘면 식량과 물이 더 들지만, 할 수 있는 일도 늘어난다.</li>
-        <li><b>생존</b> — 하루하루 배급을 정하고, 구급약을 쓰고, 사건에 대응한다. 필요하면 다시 마트로 보급을 나간다(집을 나서는 순간부터 60초).</li>
+        <li><b>60초</b> — 마트와 집을 오가며 4칸 가방으로 물자를 나른다. 집 앞에 들어서면 가방을 비우고 다시 나갈 수 있다. 60초가 끝날 때 집 앞에 있어야 산다.</li>
+        <li><b>가족</b> — 집 주변에 흩어져 숨은 가족 3명도 칸을 차지한다. 물자와 가족 중 무엇을 먼저 옮길지 정하자. 식구가 늘면 식량과 물이 더 들지만, 할 수 있는 일도 늘어난다.</li>
+        <li><b>생존</b> — 하루하루 배급을 정하고, 구급약을 쓰고, 사건에 대응한다. 물자가 모자라면 한 명을 탐사로 내보낸다. 며칠 뒤 돌아오거나, 돌아오지 못한다.</li>
         <li><b>탈출</b> — 버티기만 해서는 구조되지 않는다. 사건 속에서 탈출 경로를 열고, 그 조건을 채워야 이긴다.</li>
       </ol>
       <form class="start-form" data-form="start">
@@ -26,50 +28,6 @@ export function renderTitle({ seed }) {
         <button type="submit" class="btn primary big">게임 시작</button>
       </form>
       <p class="muted small">조작: 이동 WASD·방향키(또는 화면을 누른 채 끌기) · 줍기 E/Space · 내려놓기 1~4</p>
-    </section>`;
-}
-
-// ── 가족 선택 ────────────────────────────────────
-
-export function renderFamily(game) {
-  const candidate = game.familyCandidate();
-  const index = FAMILY_DEFS.length - game.familyQueue.length + 1;
-  const def = defOf(candidate.id);
-  const present = game.presentPeople().length;
-  const decided = FAMILY_DEFS.filter((d) => !game.familyQueue.includes(d.id));
-  const carried = game.inventory.items.map((id) => ITEMS[id].name);
-  return `
-    <section class="family-screen" data-screen="family">
-      <div class="family-intro">
-        <p class="kicker">첫 귀가 · 가족 찾기 ${index} / ${FAMILY_DEFS.length}</p>
-        <h1>집 앞에 도착했다</h1>
-        <p>좀비를 따돌리고 집 앞에 섰다. 집 주변 여기저기에 가족이 숨어 있다. 한 명씩 데려올지 정하자.
-           함께하는 사람이 많을수록 하루에 필요한 식량과 물이 늘어나지만, 가족마다 할 수 있는 일이 있다.</p>
-        <p class="muted">가져온 물품: ${carried.length ? esc(carried.join(', ')) : '없음'}</p>
-      </div>
-      <article class="card family-card">
-        <div class="person-head big">
-          <span class="dot" style="--c:${def.color}"></span>
-          <h2>${esc(def.name)} <small>${esc(def.role)}</small></h2>
-        </div>
-        <p><b>위치</b> ${esc(def.where)}</p>
-        <p><b>상태</b> ${tag(healthLabel(candidate.health))}</p>
-        <p><b>함께하면</b> ${esc(def.perk)}</p>
-        <p class="cost"><b>대가</b> 하루 필요량 식량 ${present} → <b>${present + 1}</b>, 물 ${present} → <b>${present + 1}</b></p>
-        <div class="button-row">
-          <button type="button" class="btn primary big" data-action="family" data-person="${def.id}" data-bring="1">${esc(josa(def.name, '을/를'))} 데려온다</button>
-          <button type="button" class="btn big" data-action="family" data-person="${def.id}" data-bring="0">두고 간다</button>
-        </div>
-      </article>
-      ${when(
-        decided.length,
-        `<ul class="decisions">${decided
-          .map((d) => {
-            const p = game.person(d.id);
-            return `<li>${esc(d.name)}: ${p.status === 'home' ? '데려옴' : '두고 옴'}</li>`;
-          })
-          .join('')}</ul>`,
-      )}
     </section>`;
 }
 
@@ -158,7 +116,13 @@ function familyCard(game) {
   const absent = game.people
     .filter((p) => !p.isPlayer && p.status !== 'home')
     .map((p) => {
-      const label = { left: '두고 옴 — 돌아올지도 모른다', lost: '다시 만날 수 없다', dead: `사망 (${p.cause})`, outside: '집 밖' }[p.status];
+      const label = {
+        left: '데려오지 못했다 — 돌아올지도 모른다',
+        lost: '다시 만날 수 없다',
+        dead: `사망 (${p.cause})`,
+        outside: '집 밖',
+        away: '탐사 중',
+      }[p.status];
       return `<li>${esc(p.name)}: ${esc(label)}</li>`;
     })
     .join('');
@@ -178,26 +142,55 @@ function familyCard(game) {
     </section>`;
 }
 
-function bagCard(game) {
-  const inv = game.inventory;
-  const cells = inv
-    .layout()
-    .map(
-      (cell) => `<button type="button" class="bag-item" style="grid-column: span ${cell.slots}" data-action="deposit" data-index="${cell.index}" title="재고로 옮기기">
-        ${esc(ITEMS[cell.itemId].name)}<small>${cell.slots}칸 · ${esc(ITEMS[cell.itemId].note)}</small></button>`,
-    )
+function expeditionCard(game, draft) {
+  const exp = game.expedition;
+  if (exp) {
+    const who = game.person(exp.memberId);
+    return `
+      <section class="card expedition" data-ref="expedition">
+        <h3>탐사</h3>
+        <p><b>${esc(who.name)}</b>${josa(who.name, '이/가').slice(who.name.length)} ${esc(josa(targetOf(exp.targetId).name, '을/를'))} 찾으러 마트에 가 있다
+          ${exp.withWeapon ? '(야구 방망이를 챙김)' : ''}. ${exp.departDay}일차에 떠났고, 늦어도 ${exp.departDay + EXPEDITION_DAYS[1]}일차 아침이면 소식이 있을 것이다.</p>
+        <p class="muted small">탐사 중인 사람은 식량과 물을 먹지 않지만, 사건에서 도울 수 없다. 탐사는 한 번에 한 명만 보낼 수 있다.</p>
+      </section>`;
+  }
+  const blocked = game.expeditionReason();
+  const candidates = game.presentPeople();
+  const memberId = candidates.some((p) => p.id === draft.memberId && !game.expeditionReason(p.id))
+    ? draft.memberId
+    : (candidates.find((p) => !p.isPlayer && !game.expeditionReason(p.id)) ?? candidates.find((p) => !game.expeditionReason(p.id)))?.id;
+  const withWeapon = draft.withWeapon && game.stock.weapon > 0;
+  const members = candidates
+    .map((p) => {
+      const reason = game.expeditionReason(p.id);
+      const risk = game.expeditionRisk(p.id, withWeapon);
+      const riskText = `부상 ${Math.round(risk.injury * 100)}% · 실종 ${Math.round(risk.lost * 100)}%`;
+      return `<label class="choice ${reason ? 'disabled' : ''} ${p.id === memberId ? 'on' : ''}">
+          <input type="radio" name="exp-member" data-draft="memberId" value="${p.id}" ${p.id === memberId ? 'checked' : ''} ${reason ? 'disabled' : ''} />
+          <span><b>${esc(p.name)}</b> ${esc(p.role)}${p.isPlayer ? ' · 돌아오지 못하면 게임 끝' : ''}${p.trait === 'guard' ? ' · 위험이 적다' : ''}<br />
+          <small>${esc(reason ?? riskText)}</small></span></label>`;
+    })
     .join('');
-  const empties = Array.from({ length: inv.free }, () => '<span class="bag-empty">빈칸</span>').join('');
+  const targets = game
+    .expeditionTargets()
+    .map((t) => `<option value="${t.id}" ${t.id === draft.targetId ? 'selected' : ''}>${esc(t.name)} (마트에 ${t.remaining}개)</option>`)
+    .join('');
+  const sendReason = blocked ?? (memberId ? null : '보낼 수 있는 사람이 없다');
   return `
-    <section class="card" data-ref="bag">
-      <h3>가방 <span class="count">${inv.used}/${inv.capacity}칸</span></h3>
-      <div class="bag-cells">${cells}${empties}</div>
-      ${
-        inv.isEmpty
-          ? '<p class="muted small">가방이 비어 있다.</p>'
-          : `<p class="warning">가방의 물품은 재고로 옮겨야 쓸 수 있다.</p>
-             <button type="button" class="btn primary" data-action="deposit-all">모두 재고로 옮기기</button>`
-      }
+    <section class="card expedition" data-ref="expedition">
+      <h3>탐사 보내기 <span class="count">${game.expeditions}번 다녀옴 · 갈수록 위험해진다</span></h3>
+      <p class="muted small">한 명을 마트로 보내 물자를 구해 온다. 1~${EXPEDITION_DAYS[1]}일 뒤 아침에 돌아오고, 최대 4칸을 들고 온다.
+        다치거나 돌아오지 못할 수도 있다. 떠나 있는 동안은 먹지 않지만 사건에서 도울 수 없다.</p>
+      <div class="choices">${members}</div>
+      <div class="expedition-options">
+        <label>찾아올 것 <select data-draft="targetId">${targets}</select></label>
+        ${when(
+          game.stock.weapon > 0,
+          `<label class="ration ${withWeapon ? 'on' : ''}"><input type="checkbox" data-draft="withWeapon" ${withWeapon ? 'checked' : ''} /> 야구 방망이 챙겨 보내기</label>`,
+        )}
+      </div>
+      <button type="button" class="btn primary big" data-action="send-expedition" data-person="${memberId ?? ''}" ${sendReason ? 'disabled' : ''}>탐사 보내기</button>
+      ${when(sendReason, () => `<p class="muted small">${esc(sendReason)}</p>`)}
     </section>`;
 }
 
@@ -219,7 +212,6 @@ function stockCard(game) {
 
 function martCard(game) {
   const summary = game.martSummary();
-  const danger = game.nextRunDanger();
   const rows = Object.entries(summary)
     .map(([id, n]) => `<li class="${n ? '' : 'zero'}"><span>${esc(ITEMS[id].name)}</span><b>${n}</b><small>${ITEMS[id].slots}칸</small></li>`)
     .join('');
@@ -227,7 +219,7 @@ function martCard(game) {
     <section class="card" data-ref="mart">
       <h3>마트에 남은 물자</h3>
       <ul class="mart-list">${rows}</ul>
-      <p class="muted small">다음 보급 예상: 좀비 ${danger.martZombies + danger.streetZombies}마리로 시작, 최대 ${danger.maxZombies}마리 · 보급을 나갈수록 위험해진다.</p>
+      <p class="muted small">탐사로 가져올 수 있는 남은 물자. 마트 물자는 다시 채워지지 않는다.</p>
     </section>`;
 }
 
@@ -269,24 +261,17 @@ function pathsCard(game) {
 }
 
 function actionsCard(game) {
-  const runReason = game.canStartSupplyRun();
   const endReason = game.canEndDay();
   const warnings = [];
-  if (!game.inventory.isEmpty) warnings.push('가방에 재고로 옮기지 않은 물품이 있다');
   const need = game.dailyNeed();
   if (game.rationCount('water') < need.water) warnings.push(`물을 못 마시는 사람이 ${need.water - game.rationCount('water')}명`);
   if (game.rationCount('food') < need.food) warnings.push(`굶는 사람이 ${need.food - game.rationCount('food')}명`);
   return `
     <section class="card actions" data-ref="actions">
       <div class="action">
-        <button type="button" class="btn primary big" data-action="supply" ${runReason ? 'disabled' : ''}>마트로 보급 나가기 <small>${RUN_SECONDS}초 · 오늘 ${game.ranToday ? '이미 다녀옴' : '1번 가능'}</small></button>
-        ${when(runReason, `<p class="muted small">${esc(runReason)}</p>`)}
-        ${when(!runReason, '<p class="muted small">집을 나서는 순간부터 60초. 마트까지 가는 길과 돌아오는 길이 모두 포함된다.</p>')}
-      </div>
-      <div class="action">
         <button type="button" class="btn big" data-action="end-day" ${endReason ? 'disabled' : ''}>하루 마치기 <small>→ ${game.day + 1}일차</small></button>
-        ${when(endReason, `<p class="muted small">${esc(endReason)}</p>`)}
-        ${when(!endReason && warnings.length, `<p class="warning small">${esc(warnings.join(' · '))}</p>`)}
+        ${when(endReason, () => `<p class="muted small">${esc(endReason)}</p>`)}
+        ${when(!endReason && warnings.length, () => `<p class="warning small">${esc(warnings.join(' · '))}</p>`)}
       </div>
     </section>`;
 }
@@ -304,30 +289,36 @@ function logCard(game) {
     </section>`;
 }
 
-export function renderHome(game) {
-  const lastRun = game.lastRun && game.lastRun.day === game.day && game.lastRun.mode === 'supply' ? game.lastRun : null;
+export function renderHome(game, ui = {}) {
+  const draft = { memberId: null, targetId: 'supplies', withWeapon: false, ...ui.expedition };
+  const scramble = game.day === 1 && game.lastRun ? game.lastRun : null;
+  const report = game.expeditionReport && game.expeditionReport.day === game.day ? game.expeditionReport : null;
   return `
     <section class="home-screen" data-screen="home">
       <header class="topbar">
         <div class="day-badge"><span>DAY</span><strong data-ref="day">${game.day}</strong></div>
-        <div class="topbar-meta">보급 ${game.runs}회 · 집에 ${game.presentPeople().length}명 · 시드 ${game.seed}</div>
+        <div class="topbar-meta">집에 ${game.presentPeople().length}명 · 탐사 ${game.expeditions}회 · 시드 ${game.seed}</div>
         <button type="button" class="btn ghost small" data-action="restart">처음부터</button>
       </header>
+      ${renderShelter(game)}
       ${when(
-        game.day > 1 && game.nightReport.length,
-        `<p class="night-report"><b>지난밤</b> ${esc(game.nightReport.join(' / '))}</p>`,
+        scramble,
+        () => `<p class="night-report good"><b>60초 탐색</b> 들여놓은 물품 ${scramble.items.length}개${
+          scramble.items.length ? ` (${esc(scramble.items.map((id) => ITEMS[id].name).join(', '))})` : ''
+        } · 함께 온 가족 ${scramble.family.length ? esc(scramble.family.map((id) => defOf(id).name).join(', ')) : '없음'}</p>`,
       )}
-      ${when(lastRun, () => `<p class="night-report good"><b>보급 결과</b> ${lastRun.carried.length ? esc(lastRun.carried.map((id) => ITEMS[id].name).join(', ')) : '빈손'} · 남은 시간 ${lastRun.timeLeft.toFixed(1)}초</p>`)}
+      ${when(report, () => `<p class="night-report ${report.outcome === 'lost' ? 'bad' : report.outcome === 'injured' ? '' : 'good'}" data-ref="report"><b>탐사 결과</b> ${esc(report.text)}</p>`)}
+      ${when(game.day > 1 && game.nightReport.length, () => `<p class="night-report"><b>지난밤</b> ${esc(game.nightReport.join(' / '))}</p>`)}
       <div class="home-grid">
         <div class="col">
           ${eventCard(game)}
           ${familyCard(game)}
+          ${expeditionCard(game, draft)}
           ${actionsCard(game)}
           ${logCard(game)}
         </div>
         <div class="col">
           ${pathsCard(game)}
-          ${bagCard(game)}
           ${stockCard(game)}
           ${martCard(game)}
         </div>
@@ -351,7 +342,7 @@ export function renderEnding(game) {
       <p class="ending-text">${esc(e.text)}</p>
       <dl class="stats">
         <div><dt>버틴 날</dt><dd>${e.day}일</dd></div>
-        <div><dt>보급</dt><dd>${e.runs}회</dd></div>
+        <div><dt>탐사</dt><dd>${e.expeditions}회</dd></div>
         <div><dt>함께한 사람</dt><dd>${esc(e.survivors.join(', ') || '없음')}</dd></div>
         <div><dt>잃은 사람</dt><dd>${esc(e.lost.join(', ') || '없음')}</dd></div>
       </dl>
