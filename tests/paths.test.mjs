@@ -169,3 +169,24 @@ test('탈출 계획 화면에는 열린 경로와 다음 할 일이 나온다', 
   assert.match(rescue.next, /신호탄/);
   assert.ok(rescue.requirements.find((r) => r.text === '신호탄' && r.have === 0 && r.need === 1));
 });
+
+test('경로 안내는 아직 모자란 것만 알려 주고, 놓친 기회의 남은 횟수를 정확히 센다', () => {
+  const game = homeGame({ seed: 27, stock: { food: 99, water: 99, battery: 3, radio: 1, flare: 1 } });
+  jumpToStage(game, 'rescue', 0);
+  game.chooseOption('radio');
+  let rescue = game.pathsView().find((p) => p.id === 'rescue');
+  assert.doesNotMatch(rescue.next, /신호탄을 구해/, '신호탄이 이미 있으면 구하라고 하지 않는다');
+  assert.match(rescue.next, /준비는 끝났다/);
+  game.stock.flare = 0;
+  rescue = game.pathsView().find((p) => p.id === 'rescue');
+  assert.match(rescue.next, /신호탄을 구해/);
+
+  const g2 = homeGame({ seed: 28, stock: { food: 99, water: 99 } });
+  jumpToStage(g2, 'group', 0);
+  g2.chooseOption('refuse');
+  assert.equal(g2.director.chains.group.status, 'scheduled');
+  assert.match(g2.pathsView().find((p) => p.id === 'group').next, /한 번 더 찾아오지만, 그때가 마지막/);
+  jumpToStage(g2, 'rescue', 0);
+  g2.chooseOption('ignore');
+  assert.match(g2.pathsView().find((p) => p.id === 'rescue').next, /남은 기회 2번/);
+});

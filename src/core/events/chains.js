@@ -180,12 +180,17 @@ const RESCUE = {
     });
     let next = '';
     let schedule = null;
+    const todo = [];
+    if (chain.stage <= 1 && game.stock.battery < 1) todo.push('교신용 건전지를 구해 두자');
+    if (game.stock.flare < 1) todo.push('헬기가 오기 전에 마트에서 신호탄을 구해 두자');
+    if (critical.length) todo.push(`중상자(${critical.map((p) => p.name).join(', ')})를 구급약으로 치료해 두자`);
+    const tail = todo.length ? ` ${todo.join('. ')}.` : ' 준비는 끝났다. 그날까지 버티자.';
     if (chain.stage === 1) {
       schedule = `다음 교신: ${when(chain)}`;
-      next = `${when(chain)}에 구조대가 다시 교신한다. 건전지 1개를 남겨 두고, 헬기가 오기 전에 마트에서 신호탄을 구해 두자.`;
+      next = `${when(chain)}에 구조대가 다시 교신한다.${tail}`;
     } else if (chain.stage === 2) {
       schedule = `헬기 도착: ${when(chain)}`;
-      next = `${when(chain)}에 헬기가 온다. 신호탄 1발을 재고에 두고, 중상자는 구급약으로 치료해 두자.${d.missed ? ' 이번이 마지막 기회다.' : ''}`;
+      next = `${when(chain)}에 헬기가 온다.${tail}${d.missed ? ' 이번이 마지막 기회다.' : ''}`;
     }
     return { steps, requirements, next, schedule };
   },
@@ -345,12 +350,18 @@ const GROUP = {
     ];
     let next = '';
     let schedule = null;
+    const short = [];
+    if (game.stock.food < d.food) short.push(`식량 ${d.food - game.stock.food}`);
+    if (game.stock.water < d.water) short.push(`물 ${d.water - game.stock.water}`);
+    const gather = short.length
+      ? `지금 재고로는 ${short.join(', ')}만큼 모자라다. 보급으로 채우자.`
+      : '지금 재고로는 충분하지만, 그날까지 가족이 먹고 나서도 남아 있어야 한다.';
     if (chain.stage === 1) {
       schedule = `거점 사람 방문: ${when(chain)}`;
-      next = `${when(chain)}에 거점 사람들이 다시 온다. 합류 날 낼 몫(식량 ${d.food}, 물 ${d.water})을 따로 모아 두자. 가족이 먹을 몫은 별도로 필요하다.`;
+      next = `${when(chain)}에 거점 사람들이 다시 온다. 합류 날 낼 몫(식량 ${d.food}, 물 ${d.water})을 따로 모아 두자. ${gather}`;
     } else if (chain.stage === 2) {
       schedule = `합류의 날: ${when(chain)}`;
-      next = `${when(chain)}에 데리러 온다. 그날 아침 재고에 식량 ${d.food} 이상, 물 ${d.water} 이상이 남아 있어야 한다. 전날 밤 배급을 줄여서라도 남겨 두자.${d.delays ? ' 이번이 마지막 기회다.' : ''}`;
+      next = `${when(chain)}에 데리러 온다. 그날 아침 재고에 식량 ${d.food} 이상, 물 ${d.water} 이상이 남아 있어야 한다. ${gather}${d.delays ? ' 이번이 마지막 기회다.' : ''}`;
     }
     return { steps, requirements, next, schedule };
   },
@@ -482,12 +493,17 @@ const CAR = {
     requirements.push({ text: '도로 지도', have: game.stock.map, need: 1 });
     let next = '';
     let schedule = null;
+    const missing = [];
+    if (game.stock.fuel < 2) missing.push(`연료통 ${2 - game.stock.fuel}개(각 2칸)`);
+    if (game.stock.map < 1) missing.push('도로 지도(1칸)');
+    const gear = missing.length ? `마트에서 ${missing.join('와 ')}를 가져오자.` : '연료와 지도는 준비됐다.';
     if (chain.stage === 1) {
+      const canFix = game.stock.toolkit > 0 || isCapable(game.person('sis'));
       schedule = `엔진 수리: ${when(chain)}`;
-      next = `${when(chain)}에 엔진을 손본다. 마트에서 공구 상자(2칸)를 가져오거나 동생이 움직일 수 있어야 한다.`;
+      next = `${when(chain)}에 엔진을 손본다. ${canFix ? '수리할 수단은 있다.' : '마트에서 공구 상자(2칸)를 가져오거나 동생이 움직일 수 있어야 한다.'} ${gear}`;
     } else if (chain.stage === 2) {
       schedule = `출발 점검: ${when(chain)}`;
-      next = `${when(chain)}에 출발 여부를 점검한다. 연료통 2개(각 2칸)와 도로 지도(1칸)를 재고에 모아 두자.`;
+      next = `${when(chain)}에 출발 여부를 점검한다. ${gear}`;
     }
     return { steps, requirements, next, schedule };
   },
@@ -499,8 +515,9 @@ export function openerRetriesLeft(chain) {
   return OPENER_RETRIES[chain.id] - chain.retries;
 }
 
+/** 첫 사건을 거절해 경로가 아직 열리지 않았지만 다시 찾아올 예정인 상태의 안내 */
 export function chainMissedNote(chain) {
-  const left = openerRetriesLeft(chain);
-  return left > 0 ? `놓친 기회. 다시 찾아올 수 있다 (남은 기회 ${left}번)` : '마지막 기회를 놓쳤다';
+  const chances = openerRetriesLeft(chain) + 1; // 이미 예약된 다음 방문 포함
+  return chances > 1 ? `놓친 기회. 다시 찾아온다 (남은 기회 ${chances}번)` : '놓친 기회. 한 번 더 찾아오지만, 그때가 마지막이다';
 }
 
