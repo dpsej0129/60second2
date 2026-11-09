@@ -4,7 +4,21 @@
 집에서 벌어지는 사건에 대응하며 탈출 경로를 여는 생존 게임입니다.
 초반 60초의 빠른 판단(무엇을 챙기고, 누구를 데려올지)이 이후 생존 단계에서 그대로 결과로 돌아옵니다.
 
-## 실행
+## 바로 플레이
+
+**<https://dpsej0129.github.io/60second2/>** (GitHub Pages)
+
+HTML·CSS·JavaScript만으로 된 정적 사이트라 저장소를 그대로 GitHub Pages로 공개합니다.
+처음 한 번만 저장소 설정에서 켜 주면 됩니다.
+
+1. 저장소의 **Settings → Pages**
+2. **Build and deployment → Source**: `Deploy from a branch`
+3. **Branch**: 게임 파일이 있는 브랜치(`main` 또는 작업 브랜치), 폴더는 `/ (root)` → **Save**
+4. 1~2분 뒤 위 주소에서 플레이. 이후에는 그 브랜치에 푸시할 때마다 자동으로 다시 배포됩니다.
+
+`.nojekyll` 파일은 GitHub Pages가 파일을 가공하지 않고 그대로 내보내게 합니다.
+
+## 로컬 실행
 
 빌드 도구나 설치할 의존성이 없습니다. Node.js 20 이상만 있으면 됩니다.
 
