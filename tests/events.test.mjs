@@ -2,18 +2,19 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_QUIET_DAYS } from '../src/core/constants.js';
 import { Game } from '../src/core/game.js';
-import { CHAINS } from '../src/core/events/index.js';
+import { CHAINS, RANDOM_EVENTS } from '../src/core/events/index.js';
 import { EventDirector } from '../src/core/events/director.js';
-import { RANDOM_EVENTS } from '../src/core/events/random.js';
 import { Rng } from '../src/core/rng.js';
 import { homeGame } from './helpers/setup.mjs';
 import { chooseOption, playGame } from './helpers/strategy.mjs';
 
 /** 경로를 모두 거절하고 물자를 넉넉히 준 채 days일을 보낸다(사건 배치만 관찰). */
 function observe(seed, days, target = 'none') {
-  const game = homeGame({ seed, stock: { food: 500, water: 500, med: 50 } });
+  const game = homeGame({ seed, stock: { food: 500, water: 500, med: 50 }, bonus: true });
   while (game.phase === 'home' && game.day <= days) {
-    if (game.event && !game.event.resolved) game.chooseOption(chooseOption(game, target));
+    for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
+      game.chooseOption(chooseOption(game, target));
+    }
     if (game.phase !== 'home') break;
     game.endDay();
   }
@@ -65,7 +66,7 @@ test('게임마다 사건 발생일이 달라진다', () => {
   for (let seed = 1; seed <= 60; seed++) {
     const game = new Game({ seed });
     for (const chain of Object.values(game.director.chains)) {
-      (firstDay[chain.id] ??= new Set()).add(chain.due);
+      if (chain.kind === 'path') (firstDay[chain.id] ??= new Set()).add(chain.due);
     }
     const observed = observe(seed, 15);
     sequences.add(observed.director.history.map((h) => h.defId ?? '-').join(','));
@@ -83,42 +84,96 @@ test('같은 시드면 같은 사건 배치가 나온다', () => {
 });
 
 test('연쇄 사건은 앞 단계가 끝난 뒤에만 다음 단계가 열리고, 예약된 날에 반드시 일어난다', () => {
-  const stageDays = { rescue: new Set(), group: new Set(), car: new Set() };
+  const gaps = {};
+  let missionStages = 0;
   for (let seed = 1; seed <= 40; seed++) {
-    const game = playGame(new Game({ seed, zombies: false }), { target: 'all', maxDays: 40 });
+    const game = playGame(new Game({ seed, zombies: false, difficulty: 'easy' }), { target: 'all', maxDays: 40 });
     for (const chain of Object.values(game.director.chains)) {
       let prev = null;
       for (const entry of chain.log) {
         assert.equal(entry.day, entry.scheduledFor, `seed ${seed} ${chain.id}: 예약일(${entry.scheduledFor})에 발생해야 한다`);
         if (prev) {
-          assert.ok(entry.stage === prev.stage || entry.stage === prev.stage + 1, '단계를 건너뛰지 않는다');
           assert.ok(entry.day > prev.day, '앞 단계 이후에 열린다');
+          // 탈출 경로는 단계를 건너뛰지 않는다(미션은 감자 다시 심기처럼 앞 단계로 돌아가기도 한다)
+          if (chain.kind === 'path') assert.ok(entry.stage === prev.stage || entry.stage === prev.stage + 1);
+          (gaps[chain.id] ??= new Set()).add(entry.day - prev.day);
         }
-        if (entry.stage > 0) stageDays[chain.id].add(entry.day - (prev?.day ?? 0));
         prev = entry;
       }
+      if (chain.kind === 'mission') missionStages += chain.log.length;
     }
-    // 하루에 사건은 하나뿐이다
-    const days = game.director.history.map((h) => h.day);
-    assert.equal(new Set(days).size, days.length);
+    // 하루에 연쇄 사건은 하나, 덤으로 일어나는 미션까지 합쳐도 둘을 넘지 않는다
+    const perDay = {};
+    for (const h of game.director.history) {
+      if (!h.defId) continue;
+      const d = (perDay[h.day] ??= { all: 0, chain: 0 });
+      d.all += 1;
+      if (h.kind === 'chain') d.chain += 1;
+    }
+    for (const [day, d] of Object.entries(perDay)) {
+      assert.ok(d.chain <= 1, `seed ${seed} ${day}일차: 연쇄 사건 ${d.chain}개`);
+      assert.ok(d.all <= 2, `seed ${seed} ${day}일차: 사건 ${d.all}개`);
+    }
   }
-  for (const [id, gaps] of Object.entries(stageDays)) {
-    assert.ok(gaps.size >= 2, `${id} 다음 단계까지 걸린 날짜가 무작위로 다르다 (${[...gaps].join(',')})`);
+  for (const id of ['rescue', 'group', 'car']) {
+    assert.ok(gaps[id].size >= 2, `${id} 다음 단계까지 걸린 날짜가 무작위로 다르다 (${[...gaps[id]].join(',')})`);
   }
+  assert.ok(missionStages >= 5, `미션 단계도 예약대로 일어난다 (${missionStages}번)`);
+});
+
+test('탈출 경로 일정이 미션보다 우선한다: 같은 날이면 미션이 밀린다', () => {
+  const game = homeGame({ seed: 8, stock: { food: 99, water: 99 } });
+  const d = game.director;
+  const dog = d.chains.dog;
+  const rescue = d.chains.rescue;
+  d.controller('dog', game.day).begin([3, 3]);
+  const dogDay = dog.due;
+  rescue.stage = 1;
+  rescue.opened = true;
+  assert.equal(d.schedule(rescue, dogDay), dogDay, '탈출 경로는 원하는 날에 잡힌다');
+  assert.ok(dog.due > dogDay, '미션이 뒤로 밀린다');
+  const taken = Object.values(d.chains).filter((c) => c !== dog && c.status === 'scheduled').map((c) => c.due);
+  assert.ok(!taken.includes(dog.due), '밀린 미션은 다른 예약과 겹치지 않는 날로 간다');
+  // 미션끼리, 그리고 미션은 경로를 피해 잡힌다
+  d.controller('garden', game.day).begin([dogDay - game.day, dogDay - game.day]);
+  assert.ok(![rescue.due, dog.due].includes(d.chains.garden.due));
+});
+
+test('연쇄 사건이 있는 날에는 미션 사건이 덤으로 일어나기도 한다', () => {
+  let bonus = 0;
+  let chainDays = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const game = observe(seed, 25, 'all');
+    const byDay = {};
+    for (const h of game.director.history) (byDay[h.day] ??= []).push(h);
+    for (const list of Object.values(byDay)) {
+      if (list.some((h) => h.kind === 'chain')) chainDays += 1;
+      const extra = list.filter((h) => h.kind === 'bonus');
+      if (!extra.length) continue;
+      bonus += 1;
+      assert.equal(extra.length, 1);
+      assert.ok(list.some((h) => h.kind === 'chain'), '덤 사건은 연쇄 사건이 있는 날에만');
+      assert.ok(RANDOM_EVENTS.find((e) => e.id === extra[0].defId).bonus, '덤으로는 미션 사건만 나온다');
+    }
+  }
+  assert.ok(bonus > 30 && bonus < chainDays, `연쇄 사건이 있던 ${chainDays}일 중 ${bonus}일에 덤 미션`);
 });
 
 test('열린 경로의 다음 단계는 언제나 예약되어 있다(무작위 때문에 끝까지 안 오는 일이 없다)', () => {
   for (let seed = 1; seed <= 40; seed++) {
-    const game = homeGame({ seed, stock: { food: 500, water: 500, med: 50, radio: 1, battery: 20, flare: 0, fuel: 0, map: 0 } });
+    const game = homeGame({ seed, bonus: true, stock: { food: 500, water: 500, med: 50, radio: 1, battery: 20, flare: 0, fuel: 0, map: 0 } });
     while (game.phase === 'home' && game.day <= 40) {
       for (const chain of Object.values(game.director.chains)) {
-        if (chain.status === 'scheduled') assert.ok(Number.isInteger(chain.due) && chain.due > game.day);
+        if (chain.status === 'scheduled') assert.ok(Number.isInteger(chain.due) && chain.due >= game.day);
         if (chain.status === 'active') assert.equal(game.event?.chainId, chain.id, '진행 중 단계는 오늘의 사건뿐');
       }
-      if (game.event && !game.event.resolved) game.chooseOption(chooseOption(game, 'all'));
+      for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
+        game.chooseOption(chooseOption(game, 'all'));
+      }
       if (game.phase !== 'home') break;
       for (const chain of Object.values(game.director.chains)) {
-        assert.ok(['scheduled', 'done', 'failed'].includes(chain.status), `seed ${seed}: ${chain.id} 상태 ${chain.status}`);
+        assert.ok(['idle', 'scheduled', 'done', 'failed'].includes(chain.status), `seed ${seed}: ${chain.id} 상태 ${chain.status}`);
+        if (chain.opened && chain.status === 'scheduled') assert.ok(chain.due > game.day, '열린 경로·미션의 다음 단계는 앞날에 예약되어 있다');
       }
       game.endDay();
     }

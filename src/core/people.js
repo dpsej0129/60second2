@@ -3,8 +3,10 @@ import {
   HEALTH_CRITICAL,
   HEALTH_DEATH,
   HUNGER_DEATH,
+  HUNGER_NOTICE,
   HUNGER_WEAK,
   THIRST_DEATH,
+  THIRST_NOTICE,
   THIRST_WEAK,
 } from './constants.js';
 
@@ -28,7 +30,7 @@ export const FAMILY_DEFS = [
     slots: 3,
     carryNote: '덩치가 커서 3칸을 차지한다',
     where: '집 북쪽 골목, 버려진 트럭 뒤에 숨어 있다.',
-    perk: '좀비 습격·약탈자 사건에서 문을 지킨다. 생존자 집단과 교섭할 때 더 나은 조건을 끌어낸다.',
+    perk: '좀비 습격·약탈자 사건에서 문을 지킨다. 생존자 집단과 교섭할 때 더 나은 조건을 끌어낸다. 탐사에 강하다.',
   },
   {
     id: 'mom',
@@ -99,7 +101,7 @@ export function incapableReason(p) {
 
 export function hungerLabel(h) {
   if (h <= 0) return { text: '배부름', tone: 'ok' };
-  if (h === 1) return { text: '괜찮음', tone: 'ok' };
+  if (h < HUNGER_NOTICE) return { text: '괜찮음', tone: 'ok' };
   if (h < HUNGER_WEAK) return { text: '배고픔', tone: 'warn' };
   if (h < HUNGER_DEATH) return { text: '굶주림', tone: 'bad' };
   return { text: '아사', tone: 'bad' };
@@ -107,11 +109,15 @@ export function hungerLabel(h) {
 
 export function thirstLabel(t) {
   if (t <= 0) return { text: '갈증 없음', tone: 'ok' };
-  if (t === 1) return { text: '목마름', tone: 'warn' };
+  if (t < THIRST_NOTICE) return { text: '괜찮음', tone: 'ok' };
+  if (t < THIRST_WEAK - 1) return { text: '목마름', tone: 'warn' };
   if (t < THIRST_WEAK) return { text: '심한 갈증', tone: 'warn' };
   if (t < THIRST_DEATH) return { text: '탈수', tone: 'bad' };
   return { text: '탈수사', tone: 'bad' };
 }
+
+export const needsFood = (p) => p.hunger >= HUNGER_NOTICE;
+export const needsWater = (p) => p.thirst >= THIRST_NOTICE;
 
 export function healthLabel(h) {
   if (h <= 0) return { text: '건강', tone: 'ok' };

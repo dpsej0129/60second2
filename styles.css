@@ -234,14 +234,97 @@ kbd {
 }
 
 .start-form {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 10px;
+}
+
+.start-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin: 20px 0 10px;
 }
 
-.start-form input {
+.levels {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.levels legend {
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding: 0;
+}
+
+.level {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: var(--panel);
+}
+
+.level input {
+  margin: 5px 0 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.level b {
+  display: block;
+  font-size: 17px;
+}
+
+.level small {
+  color: var(--muted);
+  line-height: 1.4;
+  display: block;
+}
+
+.level.on {
+  border-color: var(--accent);
+  background: #2b2614;
+}
+
+.level.hard.on {
+  border-color: var(--warn);
+}
+
+.level.apocalypse.on {
+  border-color: var(--bad);
+  background: #2e1715;
+}
+
+.level-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ok);
+  color: var(--ok);
+  margin-right: 6px;
+}
+
+.level-badge.hard {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.level-badge.apocalypse {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.start-form input[name='seed'] {
   width: 140px;
   margin-left: 6px;
   padding: 8px 10px;
@@ -620,6 +703,20 @@ kbd {
   border-color: var(--accent);
 }
 
+.event-card.earlier {
+  border-width: 1px;
+  opacity: 0.85;
+  padding: 10px 14px;
+}
+
+.event-card.earlier h2 {
+  font-size: 16px;
+}
+
+.event-card.earlier .outcome {
+  margin-top: 6px;
+}
+
 .event-card.chain {
   border-color: var(--chain);
 }
@@ -822,6 +919,14 @@ kbd {
 
 .path.open {
   border-color: var(--chain);
+}
+
+.path.mission.open {
+  border-color: #d8b46a;
+}
+
+.path.mission p {
+  margin: 4px 0 0;
 }
 
 .path.done {
@@ -1170,7 +1275,8 @@ kbd {
   .home-grid [data-ref='event'] {
     order: 1;
   }
-  .home-grid [data-ref='paths'] {
+  .home-grid [data-ref='paths'],
+  .home-grid [data-ref='missions'] {
     order: 2;
   }
   .home-grid [data-ref='family'] {
@@ -1184,9 +1290,6 @@ kbd {
   }
   .home-grid [data-ref='stock'] {
     order: 6;
-  }
-  .home-grid [data-ref='mart'] {
-    order: 7;
   }
   .home-grid .log-card {
     order: 8;

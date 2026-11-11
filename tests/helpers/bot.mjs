@@ -1,7 +1,6 @@
 // 실시간 구간을 대신 플레이하는 봇(A* 경로 탐색). Node 테스트와 브라우저 E2E 검증에서 함께 쓴다.
 // 게임 코드가 아니라 검증 도구다.
 import { PICK_RANGE } from '../../src/core/constants.js';
-import { ITEMS } from '../../src/core/items.js';
 import { pickupPreview, playerSpeed } from '../../src/core/run.js';
 import { HOME_ZONE, SHELVES, WORLD, collides, dist, moveCircle } from '../../src/core/world.js';
 
@@ -207,7 +206,7 @@ export class RunBot {
       cost = 60,
       threatChase = 90,
       threatWander = 55,
-      margin = 6,
+      margin = 9,
     } = {},
   ) {
     Object.assign(this, { chaseRadius, wanderRadius, predictRadius, cost, threatChase, threatWander, margin });
@@ -266,9 +265,21 @@ export class RunBot {
       this.homeEtaAt = run.elapsed;
     }
     let step = this.currentStep(run);
-    const pending =
-      step.type === 'shelf' ? ITEMS[step.shelf.itemId].slots * 0.6 + 2 : step.type === 'ground' ? 3 : 0;
+    const pending = step.type === 'shelf' || step.type === 'ground' ? 1.5 : 0;
     if (!this.hurried && run.timeLeft < this.homeEta + pending + this.margin) this.hurried = true;
+    // 집 앞에서 다음 왕복을 떠나기 전에, 다녀올 시간이 되는지 따져 본다.
+    if (!this.hurried && run.atHome && (step.type === 'shelf' || step.type === 'ground')) {
+      const goal = step.type === 'shelf' ? standPoint(step.shelf, run.player) : run.ground.find((g) => g.id === step.id);
+      const route = findPath(run.player, goal);
+      let length = 0;
+      let prev = run.player;
+      for (const p of route) {
+        length += dist(prev, p);
+        prev = p;
+      }
+      const roundTrip = (length * 2) / (playerSpeed(run) * 0.8) + 2.5;
+      if (run.timeLeft < roundTrip + this.margin) this.hurried = true;
+    }
     if (this.hurried) step = { type: 'enter' };
 
     let target = HOME_TARGET;

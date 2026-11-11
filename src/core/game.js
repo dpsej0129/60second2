@@ -1,17 +1,12 @@
 // 게임 전체 흐름: 60초 탐색(물자·가족을 집으로) → 하루 단위 생존(사건·배급·탐사) → 결말.
 // 화면(DOM)과 분리되어 있어 테스트에서 그대로 조작할 수 있다.
-import {
-  EXPEDITION_DAYS,
-  HEALTH_DEATH,
-  HUNGER_DEATH,
-  INJURY_WORSEN_DAYS,
-  THIRST_DEATH,
-} from './constants.js';
+import { EXPEDITION_DAYS, HEALTH_DEATH, HUNGER_DEATH, HUNGER_WEAK, THIRST_DEATH, THIRST_WEAK } from './constants.js';
+import { DEFAULT_DIFFICULTY, difficultyOf } from './difficulty.js';
 import { ENDINGS } from './endings.js';
-import { CHAINS, EVENT_DEFS, RANDOM_EVENTS } from './events/index.js';
+import { CHAINS, EVENT_DEFS, MISSIONS, PATHS, RANDOM_EVENTS } from './events/index.js';
 import { chainMissedNote } from './events/chains.js';
 import { EventDirector } from './events/director.js';
-import { EXPEDITION_TARGETS, expeditionRisk, rollLoot, targetOf } from './expedition.js';
+import { expeditionRisk, rollItems, rollLoot } from './expedition.js';
 import { Inventory, isPerson } from './inventory.js';
 import { emptyStock, formatResources, ITEMS } from './items.js';
 import {
@@ -22,20 +17,25 @@ import {
   incapableReason,
   isCapable,
   isHome,
+  needsFood,
+  needsWater,
 } from './people.js';
 import { Rng, randomSeed } from './rng.js';
 import { createRun, stepRun } from './run.js';
 import { josa } from './text.js';
-import { FAMILY_SPOTS, initialMartStock, martSummary } from './world.js';
+import { FAMILY_SPOTS, initialMartStock } from './world.js';
 
 const evaluate = (value, ...args) => (typeof value === 'function' ? value(...args) : value);
 
 export class Game {
-  constructor({ seed = randomSeed(), zombies = true } = {}) {
+  constructor({ seed = randomSeed(), zombies = true, difficulty = DEFAULT_DIFFICULTY } = {}) {
     this.seed = seed;
     const root = new Rng(seed);
     this.rng = { schedule: root.fork('schedule'), outcome: root.fork('outcome'), run: root.fork('run') };
     this.zombies = zombies;
+    this.difficulty = difficultyOf(difficulty);
+    // 미션 등으로 생기는 지속 상태. dog: 떠돌이 개 보리와 함께 지냄, shortcut: 탐사 지름길을 앎
+    this.flags = { dog: false, shortcut: false };
 
     this.phase = 'ready'; // ready → run → home → ending
     this.day = 0;
@@ -47,11 +47,20 @@ export class Game {
     this.run = null;
     this.lastRun = null;
 
-    this.expedition = null; // { memberId, targetId, withWeapon, departDay, returnDay }
+    this.expedition = null; // { memberId, withWeapon, departDay, returnDay, risk }
     this.expeditions = 0; // 떠난 탐사 수(많을수록 위험)
     this.expeditionReport = null; // 오늘 아침 돌아온 탐사 결과
-    this.director = new EventDirector({ rng: this.rng.schedule, chains: CHAINS, randomEvents: RANDOM_EVENTS });
-    this.event = null;
+    this.director = new EventDirector({
+      rng: this.rng.schedule,
+      chains: CHAINS,
+      randomEvents: RANDOM_EVENTS,
+      chance: this.difficulty.eventChance,
+    });
+    this.event = null; // 지금 대응할(또는 방금 대응한) 사건
+    this.eventQueue = []; // 오늘 이어서 일어날 사건
+    this.resolvedToday = []; // 오늘 이미 대응한 사건(화면 표시용)
+    this.reviveAt = null; // 탈출 경로가 모두 닫혔을 때, 하나가 다시 열리는 날
+    this.revived = 0;
     this.rations = {};
     this.rationsTouched = false;
     this.momCaredToday = false;
@@ -89,10 +98,6 @@ export class Game {
     this.log.push({ day: this.day, text, tone });
   }
 
-  martSummary() {
-    return martSummary(this.martStock);
-  }
-
   // ── 60초 탐색 ────────────────────────────────
 
   startFirstRun() {
@@ -104,6 +109,7 @@ export class Game {
       playerHealth: this.me.health,
       family: FAMILY_DEFS.map((def) => ({ id: def.id, ...FAMILY_SPOTS[def.id] })),
       zombies: this.zombies,
+      danger: this.difficulty.run,
     });
     this.phase = 'run';
     this.emit();
@@ -162,15 +168,10 @@ export class Game {
 
   // ── 탐사 ─────────────────────────────────────
 
-  expeditionTargets() {
-    return EXPEDITION_TARGETS.map((t) => ({
-      ...t,
-      remaining: t.items.reduce((sum, id) => sum + (this.martSummary()[id] ?? 0), 0),
-    }));
-  }
-
+  /** 화면에는 보여 주지 않는 내부 위험도 */
   expeditionRisk(memberId, withWeapon = false) {
-    return expeditionRisk(this.person(memberId), { withWeapon, count: this.expeditions });
+    const scale = this.difficulty.expedition.risk * (this.flags.shortcut ? 0.7 : 1);
+    return expeditionRisk(this.person(memberId), { withWeapon, count: this.expeditions, scale });
   }
 
   /** 탐사를 보낼 수 없으면 그 이유 */
@@ -186,7 +187,7 @@ export class Game {
     return why ? `${josa(p.name, '은/는')} ${why}` : null;
   }
 
-  sendExpedition({ memberId, targetId = 'supplies', withWeapon = false }) {
+  sendExpedition({ memberId, withWeapon = false }) {
     if (this.expeditionReason(memberId)) return false;
     const p = this.person(memberId);
     const weapon = withWeapon && this.stock.weapon > 0;
@@ -194,7 +195,6 @@ export class Game {
     const [min, max] = EXPEDITION_DAYS;
     this.expedition = {
       memberId,
-      targetId: targetOf(targetId).id,
       withWeapon: weapon,
       departDay: this.day,
       returnDay: this.day + this.rng.outcome.int(min, max),
@@ -202,13 +202,40 @@ export class Game {
     };
     this.expeditions += 1;
     p.status = 'away';
-    this.addLog(
-      `${josa(p.name, '이/가')} ${josa(targetOf(targetId).name, '을/를')} 찾으러 마트로 탐사를 떠났다${weapon ? ' (야구 방망이를 챙김)' : ''}.`,
-      'event',
-    );
+    this.addLog(`${josa(p.name, '이/가')} 물자를 찾아 밖으로 탐사를 떠났다${weapon ? ' (야구 방망이를 챙김)' : ''}.`, 'event');
     this.syncRations();
     this.emit();
     return true;
+  }
+
+  /** 열린 탈출 경로가 요구하는데 아직 모자란 물품(탐사·보급 상자에서 조금 더 잘 나온다) */
+  neededItems() {
+    const s = this.stock;
+    const sis = this.person('sis');
+    const open = (id) => {
+      const c = this.director.chains[id];
+      return c.opened && !['done', 'failed'].includes(c.status);
+    };
+    const out = [];
+    if (open('rescue')) {
+      if (!s.radio && !isCapable(sis)) out.push('radio');
+      if (s.battery < 1 && this.director.chains.rescue.stage <= 1) out.push('battery');
+      if (s.flare < 1) out.push('flare');
+    }
+    if (open('car')) {
+      if (!s.toolkit && !isCapable(sis) && this.director.chains.car.stage <= 1) out.push('toolkit');
+      if (s.fuel < 2) out.push('fuel');
+      if (s.map < 1) out.push('roadmap');
+    }
+    if (open('group') && s.med < 1 && this.director.chains.group.stage <= 1) out.push('bandage');
+    return out;
+  }
+
+  /** 물품 id 목록을 집 재고에 넣는다. */
+  addItems(ids) {
+    for (const id of ids) {
+      for (const [key, n] of Object.entries(ITEMS[id].gives)) this.stock[key] += n;
+    }
   }
 
   /** 아침에 탐사자가 돌아오는지 확인한다. */
@@ -219,7 +246,7 @@ export class Game {
     const p = this.person(exp.memberId);
     const rng = this.rng.outcome;
     const days = this.day - exp.departDay;
-    const report = { day: this.day, memberId: p.id, name: p.name, targetId: exp.targetId, items: [], extra: { food: 0, water: 0 } };
+    const report = { day: this.day, memberId: p.id, name: p.name, items: [], extra: { food: 0, water: 0 } };
 
     if (rng.chance(exp.risk.lost)) {
       p.status = 'lost';
@@ -232,26 +259,24 @@ export class Game {
     }
 
     p.status = 'home';
-    p.hunger = Math.min(p.hunger + days, 3);
-    p.thirst = Math.min(p.thirst + days, 2);
-    const loot = rollLoot({ martStock: this.martStock, targetId: exp.targetId, rng });
-    for (const id of loot.items) {
-      for (const [key, n] of Object.entries(ITEMS[id].gives)) this.stock[key] += n;
-    }
+    p.hunger = Math.min(p.hunger + days, HUNGER_WEAK - 1);
+    p.thirst = Math.min(p.thirst + days, THIRST_WEAK - 1);
+    const { capacity, found } = this.difficulty.expedition;
+    const loot = rollLoot({ rng, capacity, found, needs: this.neededItems() });
+    this.addItems(loot.items);
     this.stock.food += loot.extra.food;
     this.stock.water += loot.extra.water;
     if (exp.withWeapon) this.stock.weapon += 1;
     report.items = loot.items;
     report.extra = loot.extra;
-    report.foundTarget = loot.foundTarget;
 
     const injured = rng.chance(exp.risk.injury);
     if (injured) p.health = Math.min(HEALTH_DEATH - 1, p.health + 1);
     report.outcome = injured ? 'injured' : 'returned';
     const names = loot.items.map((id) => ITEMS[id].name);
     const extraText = formatResources(loot.extra);
-    const found = names.length ? names.join(', ') : '마트에서 쓸 만한 것을 찾지 못했다';
-    report.text = `${josa(p.name, '이/가')} ${days}일 만에 돌아왔다. 가져온 것: ${found}${extraText ? ` · 길에서 주운 것: ${extraText}` : ''}${
+    const carried = names.length ? names.join(', ') : '쓸 만한 것을 찾지 못했다';
+    report.text = `${josa(p.name, '이/가')} ${days}일 만에 돌아왔다. 가져온 것: ${carried}${extraText ? ` · 길에서 주운 것: ${extraText}` : ''}${
       injured ? ` · ${josa(p.name, '은/는')} 다쳐서 돌아왔다 (${healthLabel(p.health).text})` : ''
     }`;
     this.expeditionReport = report;
@@ -265,11 +290,36 @@ export class Game {
     for (const p of this.people) p.treatedToday = false;
     this.resolveExpedition();
     if (this.ending) return;
+    this.revivePath();
     const inst = this.director.pick(this.day, this);
     this.event = inst ? { ...inst, resolved: false, outcome: null, choice: null } : null;
+    this.eventQueue = [];
+    this.resolvedToday = [];
     if (inst) this.addLog(`사건 발생: ${EVENT_DEFS[inst.defId].title}`, 'event');
+    if (inst?.chainId) {
+      const bonus = this.director.pickBonus(this.day, this);
+      if (bonus) this.eventQueue.push({ ...bonus, resolved: false, outcome: null, choice: null });
+    }
     this.rationsTouched = false;
     this.resetRations();
+  }
+
+  /** 탈출 경로가 모두 닫혀 이길 길이 없어지면, 며칠 뒤 하나가 다시 열린다. */
+  revivePath() {
+    const paths = PATHS.map((def) => this.director.chains[def.id]);
+    if (!paths.every((c) => c.status === 'failed')) {
+      this.reviveAt = null;
+      return;
+    }
+    if (this.reviveAt == null) {
+      this.reviveAt = this.day + this.rng.schedule.int(4, 6);
+      return;
+    }
+    if (this.day < this.reviveAt) return;
+    const chain = paths[this.revived % paths.length];
+    this.revived += 1;
+    this.reviveAt = null;
+    this.director.reopen(chain.id, this.day);
   }
 
   quietStreak() {
@@ -282,20 +332,21 @@ export class Game {
     return { people: n, food: n, water: n };
   }
 
-  resetRations() {
+  /** 기본 배급표: 배고프거나 목마른 사람에게만 준다(매일 줄 필요는 없다). all=true면 가능한 만큼 전원에게. */
+  resetRations(all = false) {
     const present = this.presentPeople();
     const rations = {};
     for (const p of present) rations[p.id] = { food: false, water: false };
     let water = this.stock.water;
     for (const p of [...present].sort((a, b) => b.thirst - a.thirst)) {
-      if (water > 0) {
+      if (water > 0 && (all || needsWater(p))) {
         rations[p.id].water = true;
         water -= 1;
       }
     }
     let food = this.stock.food;
     for (const p of [...present].sort((a, b) => b.hunger - a.hunger)) {
-      if (food > 0) {
+      if (food > 0 && (all || needsFood(p))) {
         rations[p.id].food = true;
         food -= 1;
       }
@@ -345,8 +396,7 @@ export class Game {
     if (this.phase !== 'home') return;
     this.rationsTouched = true;
     if (on) {
-      this.resetRations();
-      this.rationsTouched = true;
+      this.resetRations(true);
     } else {
       for (const r of Object.values(this.rations)) r.food = r.water = false;
     }
@@ -426,8 +476,9 @@ export class Game {
         const reason = opt.check ? opt.check(this, params, chain) : null;
         return {
           id: opt.id,
-          label: opt.label,
+          label: evaluate(opt.label, this, params, chain),
           who: opt.who ?? null,
+          tag: opt.tag ?? null,
           cost: evaluate(opt.cost, this, params, chain) ?? null,
           note: evaluate(opt.note, this, params, chain) ?? null,
           disabled: !!reason,
@@ -461,7 +512,15 @@ export class Game {
       this.pendingWin = null;
       this.setEnding(endingId, extra);
     }
-    if (!this.ending) this.syncRations();
+    if (!this.ending) {
+      this.syncRations();
+      if (this.eventQueue.length) {
+        // 오늘 이어서 일어나는 사건으로 넘어간다
+        this.resolvedToday.push(this.eventView());
+        this.event = this.eventQueue.shift();
+        this.addLog(`사건 발생: ${EVENT_DEFS[this.event.defId].title}`, 'event');
+      }
+    }
     this.emit();
     return { ok: true, text };
   }
@@ -494,6 +553,16 @@ export class Game {
         p.treatedToday = true;
       },
       chain: chain ? this.director.controller(chain.id, this.day) : null,
+      /** 미션(연쇄 사건)을 시작하거나 조작할 때 */
+      mission: (id) => this.director.controller(id, this.day),
+      /** 나쁜 결과가 나올 확률 p를 난이도에 맞춰 굴린다 */
+      danger: (p) => this.rng.outcome.chance(Math.min(0.95, p * game.difficulty.harm)),
+      /** 무작위 물품 n개를 얻어 재고에 넣고, 그 목록을 돌려준다 */
+      loot(n) {
+        const ids = rollItems({ rng: game.rng.outcome, count: n, needs: game.neededItems() });
+        game.addItems(ids);
+        return ids;
+      },
       win(endingId, extra = {}) {
         game.pendingWin = { endingId, extra };
       },
@@ -544,7 +613,7 @@ export class Game {
         continue;
       }
       p.untreated += 1;
-      if (p.untreated >= INJURY_WORSEN_DAYS) {
+      if (p.untreated >= this.difficulty.worsenDays) {
         p.health = Math.min(HEALTH_DEATH, p.health + 1);
         p.untreated = 0;
         report.push(`치료받지 못한 ${p.name}의 부상이 악화됐다. (${healthLabel(p.health).text})`);
@@ -583,7 +652,7 @@ export class Game {
   // ── 승리 경로 ────────────────────────────────
 
   pathsView() {
-    return CHAINS.map((def) => {
+    return PATHS.map((def) => {
       const chain = this.director.chains[def.id];
       let status;
       if (chain.status === 'done') status = 'done';
@@ -607,6 +676,20 @@ export class Game {
     });
   }
 
+  // ── 미션 ─────────────────────────────────────
+
+  /** 시작한 미션 목록: [{ id, icon, title, status: 'active'|'done'|'failed', text, schedule }] */
+  missionsView() {
+    return MISSIONS.map((def) => {
+      const chain = this.director.chains[def.id];
+      if (!chain.opened) return null;
+      const status = chain.status === 'done' ? 'done' : chain.status === 'failed' ? 'failed' : 'active';
+      const base = { id: def.id, icon: def.icon, title: def.title, status };
+      if (status !== 'active') return { ...base, text: chain.result ?? chain.failReason ?? '' };
+      return { ...base, ...def.describe(chain, this) };
+    }).filter(Boolean);
+  }
+
   // ── 결말 ─────────────────────────────────────
 
   setEnding(id, extra = {}) {
@@ -619,12 +702,14 @@ export class Game {
     const awayAtEscape = def.type === 'victory' ? this.people.filter((p) => p.status === 'away') : [];
     for (const p of awayAtEscape) p.status = 'lost';
     if (awayAtEscape.length) text += ` 탐사를 나간 ${awayAtEscape.map((p) => p.name).join(', ')}을 기다릴 수 없었다.`;
+    if (def.type === 'victory' && this.flags.dog) text += ' 보리도 꼬리를 흔들며 끝까지 함께했다.';
     this.ending = {
       id,
       type: def.type,
       title: def.title,
       text,
       day: this.day,
+      difficulty: this.difficulty.name,
       expeditions: this.expeditions,
       survivors: this.presentPeople().map((p) => p.name),
       lost: this.people.filter((p) => ['dead', 'lost', 'left'].includes(p.status)).map((p) => p.name),

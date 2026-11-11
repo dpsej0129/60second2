@@ -30,9 +30,14 @@ export function enterHome(game) {
   game.stepRun(SIM_STEP, { interact: true });
 }
 
-/** bring 에 있는 가족을 실제로 데려와 집 생존 1일차로 넘어간 게임 */
-export function homeGame({ seed = 1, bring = ['dad', 'mom', 'sis'], stock = {}, zombies = false } = {}) {
-  const game = new Game({ seed, zombies });
+/**
+ * bring 에 있는 가족을 실제로 데려와 집 생존 1일차로 넘어간 게임.
+ * bonus: false(기본)면 '덤으로 일어나는 미션 사건'을 꺼서 하루에 사건이 하나만 일어난다
+ * (특정 사건의 조건을 따로 떼어 검사하기 위한 것. 덤 사건 자체는 events/missions 테스트에서 확인한다).
+ */
+export function homeGame({ seed = 1, bring = ['dad', 'mom', 'sis'], stock = {}, zombies = false, difficulty = 'hard', bonus = false } = {}) {
+  const game = new Game({ seed, zombies, difficulty });
+  if (!bonus) game.director.pickBonus = () => null;
   game.startFirstRun();
   for (const id of bring) {
     const spot = game.run.ground.find((g) => g.id === id);
@@ -46,11 +51,42 @@ export function homeGame({ seed = 1, bring = ['dad', 'mom', 'sis'], stock = {}, 
   return game;
 }
 
-/** 오늘 사건이 있으면 항상 가능한 마지막 선택지(거절·버티기 류)로 넘긴다. */
+/** 오늘 사건이 있으면(이어지는 사건 포함) 항상 가능한 마지막 선택지(거절·버티기 류)로 넘긴다. */
 export function resolveAnyEvent(game) {
-  if (!game.event || game.event.resolved) return;
-  const enabled = game.eventView().options.filter((o) => !o.disabled);
-  game.chooseOption(enabled[enabled.length - 1].id);
+  for (let i = 0; i < 5 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
+    const enabled = game.eventView().options.filter((o) => !o.disabled);
+    game.chooseOption(enabled[enabled.length - 1].id);
+  }
+}
+
+/** 다른 사건이 끼어들지 않게 한다: 무작위 사건을 없애고 탈출 경로를 끝난 것으로 둔다(미션만 떼어 검사할 때). */
+export function isolate(game) {
+  game.director.randomEvents = [];
+  for (const chain of Object.values(game.director.chains)) {
+    if (chain.kind === 'path') {
+      chain.status = 'done';
+      chain.due = null;
+    }
+  }
+  return game;
+}
+
+/** 지정한 무작위 사건을 오늘의 사건으로 세운다(선택지 조건·결과 검사용). */
+export function stageEvent(game, defId, params = {}) {
+  game.event = { defId, chainId: null, day: game.day, params, resolved: false, outcome: null, choice: null };
+  game.eventQueue = [];
+  return game.eventView();
+}
+
+/** 미션(또는 경로)의 예약된 다음 단계가 일어나는 날까지 하루씩 넘긴다. */
+export function untilChainEvent(game, chainId, maxDays = 12) {
+  for (let i = 0; i < maxDays && game.phase === 'home'; i++) {
+    if (game.event?.chainId === chainId && !game.event.resolved) return game.eventView();
+    resolveAnyEvent(game);
+    if (game.phase !== 'home') break;
+    game.endDay();
+  }
+  return game.event?.chainId === chainId && !game.event.resolved ? game.eventView() : null;
 }
 
 /** n일 동안 사건은 아무 선택지로 넘기며 하루를 보낸다. */

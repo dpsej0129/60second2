@@ -7,6 +7,7 @@ function hasBatchim(word) {
 }
 
 export function josa(word, pair) {
+  if (word === '나' && pair === '이/가') return '내가';
   const [withBatchim, withoutBatchim] = pair.split('/');
   return word + (hasBatchim(word) ? withBatchim : withoutBatchim);
 }

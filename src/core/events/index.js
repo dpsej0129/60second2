@@ -1,7 +1,13 @@
-import { CHAINS } from './chains.js';
-import { RANDOM_EVENTS } from './random.js';
+import { CHAINS as PATHS } from './chains.js';
+import { MISSIONS, MISSION_EVENTS } from './missions.js';
+import { RANDOM_EVENTS as BASE_EVENTS } from './random.js';
 
-export { CHAINS, RANDOM_EVENTS };
+/** 탈출 경로(승리 조건)와 미션(곁가지 연쇄 사건)을 합친 전체 연쇄 사건 */
+export const CHAINS = [...PATHS, ...MISSIONS];
+/** 무작위로 일어나는 사건: 기본 사건 + 미션을 여는 사건·단발 미션 */
+export const RANDOM_EVENTS = [...BASE_EVENTS, ...MISSION_EVENTS.map((def) => ({ ...def, bonus: true }))];
+
+export { MISSIONS, PATHS };
 
 /** 모든 사건 정의를 id로 찾을 수 있게 모은다. */
 export const EVENT_DEFS = {};

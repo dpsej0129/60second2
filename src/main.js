@@ -2,9 +2,11 @@
 //
 // URL 옵션
 //   ?seed=123456      같은 시드로 시작(사건 배치 재현)
+//   ?difficulty=hard  시작 화면의 난이도 기본 선택(easy | hard | apocalypse)
 //   ?debug=1          window.game 으로 게임 상태 노출
 //   ?timescale=2      실시간 구간 속도 배율(검증용)
 //   ?zombies=off      좀비 없이(흐름 확인용)
+import { DEFAULT_DIFFICULTY, DIFFICULTIES } from './core/difficulty.js';
 import { Game } from './core/game.js';
 import { randomSeed } from './core/rng.js';
 import { RunView } from './ui/runView.js';
@@ -13,6 +15,7 @@ import { renderEnding, renderHome, renderTitle } from './ui/screens.js';
 const params = new URLSearchParams(location.search);
 const OPTIONS = {
   seed: params.get('seed') ? Number(params.get('seed')) : null,
+  difficulty: DIFFICULTIES[params.get('difficulty')] ? params.get('difficulty') : DEFAULT_DIFFICULTY,
   debug: params.has('debug'),
   timescale: Math.max(0.25, Math.min(8, Number(params.get('timescale')) || 1)),
   zombies: params.get('zombies') !== 'off',
@@ -24,7 +27,8 @@ class App {
     this.game = null;
     this.runView = null;
     this.unsubscribe = null;
-    this.ui = { expedition: { memberId: null, targetId: 'supplies', withWeapon: false } };
+    this.ui = { expedition: { memberId: null, withWeapon: false } };
+    this.difficulty = OPTIONS.difficulty;
     root.addEventListener('click', (e) => this.onClick(e));
     root.addEventListener('change', (e) => this.onChange(e));
     root.addEventListener('submit', (e) => this.onSubmit(e));
@@ -34,14 +38,18 @@ class App {
   showTitle(seed = null) {
     this.teardown();
     this.game = null;
-    this.root.innerHTML = renderTitle({ seed });
+    this.root.innerHTML = renderTitle({ seed, difficulty: this.difficulty });
     document.title = '마트 탈출 60초';
   }
 
   newGame(seed) {
     this.teardown();
-    this.ui.expedition = { memberId: null, targetId: 'supplies', withWeapon: false };
-    this.game = new Game({ seed: Number.isFinite(seed) && seed > 0 ? seed : randomSeed(), zombies: OPTIONS.zombies });
+    this.ui.expedition = { memberId: null, withWeapon: false };
+    this.game = new Game({
+      seed: Number.isFinite(seed) && seed > 0 ? seed : randomSeed(),
+      zombies: OPTIONS.zombies,
+      difficulty: this.difficulty,
+    });
     if (OPTIONS.debug) window.game = this.game;
     this.unsubscribe = this.game.subscribe(() => this.render());
     this.render();
@@ -89,11 +97,18 @@ class App {
     const form = e.target.closest('[data-form="start"]');
     if (!form) return;
     e.preventDefault();
-    const value = new FormData(form).get('seed');
+    const data = new FormData(form);
+    const value = data.get('seed');
+    if (DIFFICULTIES[data.get('difficulty')]) this.difficulty = data.get('difficulty');
     this.newGame(value ? Number(value) : null);
   }
 
   onChange(e) {
+    if (e.target.name === 'difficulty' && !this.game) {
+      this.difficulty = e.target.value;
+      for (const el of this.root.querySelectorAll('.level')) el.classList.toggle('on', el.contains(e.target));
+      return;
+    }
     const draft = e.target.closest('[data-draft]');
     if (draft && this.game) {
       const key = draft.dataset.draft;
@@ -134,7 +149,7 @@ class App {
         break;
       case 'send-expedition': {
         const draft = this.ui.expedition;
-        game.sendExpedition({ memberId: person, targetId: draft.targetId, withWeapon: draft.withWeapon });
+        game.sendExpedition({ memberId: person, withWeapon: draft.withWeapon });
         break;
       }
       case 'end-day':
@@ -145,7 +160,7 @@ class App {
         if (confirm('지금 게임을 버리고 처음 화면으로 돌아갈까요?')) this.showTitle();
         break;
       case 'new-game':
-        this.newGame(null);
+        this.showTitle(); // 난이도를 다시 고를 수 있게 시작 화면으로
         break;
       case 'same-seed':
         this.newGame(game.seed);

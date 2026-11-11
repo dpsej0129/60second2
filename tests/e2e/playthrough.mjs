@@ -2,7 +2,7 @@
 //   npm run test:e2e
 // Playwright(Chromium)가 설치되어 있어야 한다. 없으면 건너뛴다.
 //
-// 60초 탐색은 키보드 이벤트로, 집 화면은 버튼·라디오·선택 상자·체크박스 클릭으로만 조작한다.
+// 시작 화면에서 난이도를 고르고, 60초 탐색은 키보드 이벤트로, 집 화면은 버튼·라디오·체크박스 클릭으로만 조작한다.
 // 무엇을 고를지는 tests/helpers/strategy.mjs 가 정하고(페이지 안에서 불러 씀),
 // 실제 입력은 화면을 통해 넣는다.
 import assert from 'node:assert/strict';
@@ -103,14 +103,19 @@ async function waitScreen(page, ...names) {
 const text = (page, selector) => page.$eval(selector, (el) => el.textContent.replace(/\s+/g, ' ').trim());
 
 /** 게임 하나를 처음부터 결말까지 플레이한다. 반환: { ending, checks } */
-async function playThrough(page, { baseUrl, seed, target, zombies, timescale, shotPrefix, bring = ['dad', 'mom', 'sis'] }) {
+async function playThrough(page, { baseUrl, seed, target, zombies, timescale, shotPrefix, difficulty = 'easy', bring = ['dad', 'mom', 'sis'] }) {
   const checks = {};
   const shot = async (name, fullPage = false) => {
     if (shotPrefix) await page.screenshot({ path: join(OUT, `${shotPrefix}-${name}.png`), fullPage });
   };
   await page.goto(`${baseUrl}/?seed=${seed}&debug=1&timescale=${timescale}${zombies ? '' : '&zombies=off'}`);
+  await waitScreen(page, 'title');
+  assert.equal(await page.$$eval('input[name="difficulty"]', (els) => els.length), 3, '난이도 세 가지');
+  await page.click(`label.level.${difficulty}`); // 시작 전에 난이도를 고른다
+  if (shotPrefix) await shot('0-title');
   await page.click('button[type=submit]');
   await waitScreen(page, 'run');
+  assert.equal(await page.evaluate(() => window.game.difficulty.id), difficulty, '고른 난이도로 시작한다');
   assert.equal(await text(page, '[data-ref="time"]'), '60.0', '시작 전에는 60초 그대로');
   await page.waitForTimeout(400);
   assert.equal(await text(page, '[data-ref="time"]'), '60.0', '카운트다운 시작 전에는 시간이 흐르지 않는다');
@@ -143,12 +148,20 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
   const present = await page.evaluate(() => window.game.presentPeople().map((p) => p.id));
   for (const id of present) assert.ok(await page.$(`[data-ref="shelter"] [data-person="${id}"]`), `집 안 장면에 ${id}`);
   const need = await text(page, '.need');
-  assert.match(need, new RegExp(`하루 필요량 식량 ${present.length} · 물 ${present.length}`), '집에 있는 사람 수만큼 필요량');
+  assert.match(need, new RegExp(`전원 한 끼 식량 ${present.length} · 물 ${present.length}`), '집에 있는 사람 수만큼 필요량');
   checks.need = need.split('·').slice(0, 2).join('·');
+  // 챙긴 개수 그대로 재고가 된다: 식량·물 재고 = 들여놓은 통조림·생수 개수
+  const counted = await page.evaluate(() => ({ food: window.game.stock.food, water: window.game.stock.water }));
+  assert.equal(counted.food, scramble.items.filter((id) => id === 'canned').length, '통조림 1개 = 식량 1');
+  assert.equal(counted.water, scramble.items.filter((id) => id === 'water').length, '생수 1개 = 물 1');
+  const homeHtml = await page.content();
+  assert.ok(!homeHtml.includes('마트에 남은 물자'), '마트 남은 물자는 보이지 않는다');
+  assert.ok(!/실종 \d+%|부상 \d+%/.test(homeHtml), '탐사 확률은 보이지 않는다');
 
   let homeShot = false;
   let pathShot = false;
   let reportShot = false;
+  let missionShot = false;
   for (let guard = 0; guard < 60; guard++) {
     screen = await waitScreen(page, 'home', 'ending');
     if (screen === 'ending') break;
@@ -162,36 +175,47 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
       }
     }
 
-    // 오늘의 사건
-    if (await page.$('[data-ref="event"].pending')) {
+    // 오늘의 사건(덤으로 이어지는 미션 사건까지 모두)
+    let ended = false;
+    for (let i = 0; i < 4 && (await page.$('[data-ref="event"].pending')); i++) {
       if (!homeShot) {
         await shot('3-home-event', true);
         homeShot = true;
       }
+      if (await page.$('.event-card.earlier')) checks.followUps = (checks.followUps ?? 0) + 1;
       const option = await strategy(page, 'chooseOption', target);
       await page.click(`[data-action="choose"][data-option="${option}"]`);
-      if (await page.evaluate(() => window.game.phase === 'ending')) break;
-    } else if (await page.$('[data-ref="event"].quiet')) {
-      checks.quietNote = await text(page, '[data-ref="event"] .muted');
+      if (await page.evaluate(() => window.game.phase === 'ending')) {
+        ended = true;
+        break;
+      }
+    }
+    if (ended) break;
+    if (await page.$('[data-ref="event"].quiet')) checks.quietNote = await text(page, '[data-ref="event"] .muted');
+    if (await page.$('[data-ref="missions"]')) {
+      checks.missions = await page.$$eval('[data-mission]', (els) => els.map((el) => el.dataset.mission));
+      if (!missionShot) {
+        await shot('6-missions', true);
+        missionShot = true;
+      }
     }
 
-    if (!pathShot && (await page.$('.path.open'))) {
+    if (!pathShot && (await page.$('.path.open:not(.mission)'))) {
       await shot('4-path-open', true);
       pathShot = true;
-      checks.pathNext = await text(page, '.path.open .next');
+      checks.pathNext = await text(page, '.path.open:not(.mission) .next');
     }
 
-    // 탐사(라디오·선택 상자·체크박스·버튼)
-    const plan = await strategy(page, 'expeditionPlan', target);
+    // 탐사(라디오·체크박스·버튼). 무엇을 가져올지는 고를 수 없다.
+    const plan = await strategy(page, 'expeditionPlan');
     if (plan) {
+      assert.equal(await page.$('[data-ref="expedition"] select'), null, '찾아올 것을 고르는 칸이 없다');
       await page.click(`input[data-draft="memberId"][value="${plan.memberId}"]`);
-      await page.selectOption('select[data-draft="targetId"]', plan.targetId);
       const weapon = await page.$('input[data-draft="withWeapon"]');
       if (weapon && plan.withWeapon !== (await weapon.isChecked())) await weapon.click();
       await page.click('[data-action="send-expedition"]');
       const exp = await page.evaluate(() => window.game.expedition);
       assert.equal(exp.memberId, plan.memberId, '고른 사람이 탐사를 떠났다');
-      assert.equal(exp.targetId, plan.targetId, '고른 물건을 찾으러 갔다');
       assert.ok(!(await page.$(`[data-ref="shelter"] [data-person="${plan.memberId}"]`)), '탐사 중인 사람은 집 안 장면에서 빠진다');
       checks.expeditions = (checks.expeditions ?? 0) + 1;
     }
@@ -266,18 +290,13 @@ async function main() {
     ]) {
       let won = false;
       for (const seed of seeds) {
-        const { ending, checks } = await playThrough(page, {
-          baseUrl,
-          seed,
-          target,
-          zombies: false,
-          timescale: 4,
-          shotPrefix: target === 'rescue' && seed === seeds[0] ? 'flow' : null,
-        });
-        log(`[좀비 없음] ${target} seed ${seed}: ${ending?.id} (${ending?.day}일차, 탐사 ${ending?.expeditions}회)`, JSON.stringify(checks));
+        const first = target === 'rescue' && seed === seeds[0];
+        const { ending, checks } = await playThrough(page, { baseUrl, seed, target, zombies: false, timescale: 4, difficulty: 'easy', shotPrefix: first ? 'flow' : null });
+        log(`[좀비 없음·이지] ${target} seed ${seed}: ${ending?.id} (${ending?.day}일차, 탐사 ${ending?.expeditions}회)`, JSON.stringify(checks));
         assert.ok(ending, '결말에 도달한다');
-        results.push({ target, seed, zombies: false, ending: ending.id });
-        if (target === 'rescue' && seed === seeds[0]) await page.screenshot({ path: join(OUT, 'flow-6-ending.png') });
+        assert.equal(ending.difficulty, '이지');
+        results.push({ target, seed, difficulty: 'easy', zombies: false, ending: ending.id });
+        if (first) await page.screenshot({ path: join(OUT, 'flow-7-ending.png') });
         if (ending.id === target) {
           won = true;
           break;
@@ -288,27 +307,33 @@ async function main() {
     }
 
     // 2) 좀비가 있는 실제 난이도로 플레이 (승리든 패배든 결말까지 가야 한다)
-    for (const [target, seed] of [
-      ['rescue', 11],
-      ['group', 12],
-      ['rescue', 13],
+    for (const [target, seed, difficulty] of [
+      ['rescue', 11, 'easy'],
+      ['group', 12, 'hard'],
+      ['rescue', 13, 'apocalypse'],
     ]) {
-      const { ending, checks } = await playThrough(page, { baseUrl, seed, target, zombies: true, timescale: 3, shotPrefix: seed === 11 ? 'zombie' : null });
-      log(`[좀비 있음] ${target} seed ${seed}: ${ending?.id} (${ending?.type}, ${ending?.day}일차, 탐사 ${ending?.expeditions}회)`, JSON.stringify(checks));
+      const { ending, checks } = await playThrough(page, { baseUrl, seed, target, zombies: true, timescale: 3, difficulty, shotPrefix: seed === 11 ? 'zombie' : null });
+      log(`[좀비 있음·${ending?.difficulty}] ${target} seed ${seed}: ${ending?.id} (${ending?.type}, ${ending?.day}일차, 탐사 ${ending?.expeditions}회)`, JSON.stringify(checks));
       assert.ok(ending, '결말에 도달한다');
-      results.push({ target, seed, zombies: true, ending: ending.id });
+      results.push({ target, seed, difficulty, zombies: true, ending: ending.id });
     }
 
-    // 3) 결말 화면에서 같은 시드로 다시 시작
+    // 3) 결말 화면에서 같은 시드·같은 난이도로 다시 시작
     await waitScreen(page, 'ending');
     await page.screenshot({ path: join(OUT, 'restart-1-ending.png') });
-    const oldSeed = await page.evaluate(() => window.game.seed);
+    const old = await page.evaluate(() => ({ seed: window.game.seed, difficulty: window.game.difficulty.id }));
     await page.click('[data-action="same-seed"]');
     await waitScreen(page, 'run');
-    const fresh = await page.evaluate(() => ({ seed: window.game.seed, phase: window.game.phase, day: window.game.day, items: window.game.inventory.items.length }));
-    assert.deepEqual(fresh, { seed: oldSeed, phase: 'ready', day: 0, items: 0 });
+    const fresh = await page.evaluate(() => ({
+      seed: window.game.seed,
+      difficulty: window.game.difficulty.id,
+      phase: window.game.phase,
+      day: window.game.day,
+      items: window.game.inventory.items.length,
+    }));
+    assert.deepEqual(fresh, { ...old, phase: 'ready', day: 0, items: 0 });
 
-    // 4) 60초 동안 마트에 가만히 있으면 시간 초과 패배 → 새 게임
+    // 4) 60초 동안 마트에 가만히 있으면 시간 초과 패배 → '새 게임'은 난이도를 고르는 시작 화면으로
     await page.goto(`${baseUrl}/?seed=5&debug=1&timescale=6&zombies=off`);
     await page.click('button[type=submit]');
     await waitScreen(page, 'run');
@@ -318,9 +343,8 @@ async function main() {
     assert.equal(timeout.id, 'timeout');
     log(`[시간 초과] ${timeout.title}: ${timeout.text}`);
     await page.click('[data-action="new-game"]');
-    await waitScreen(page, 'run');
-    const newSeed = await page.evaluate(() => window.game.seed);
-    assert.notEqual(newSeed, oldSeed, '새 게임은 새 시드');
+    await waitScreen(page, 'title');
+    assert.equal(await page.$$eval('input[name="difficulty"]', (els) => els.length), 3);
 
     assert.deepEqual(errors, [], '브라우저 콘솔 오류 없음');
     log('\nE2E 결과', JSON.stringify(results));

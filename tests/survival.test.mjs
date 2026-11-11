@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HUNGER_DEATH, INJURY_WORSEN_DAYS, THIRST_DEATH } from '../src/core/constants.js';
-import { homeGame, resolveAnyEvent } from './helpers/setup.mjs';
+import { HUNGER_DEATH, HUNGER_NOTICE, THIRST_DEATH, THIRST_NOTICE } from '../src/core/constants.js';
+import { homeGame, passDays, resolveAnyEvent } from './helpers/setup.mjs';
 
 test('60초 동안 데려온 가족만 집에 있고, 나머지는 남겨진다', () => {
   const none = homeGame({ bring: [] });
@@ -22,7 +22,7 @@ test('60초 동안 데려온 가족만 집에 있고, 나머지는 남겨진다'
   );
 });
 
-test('데려온 가족이 많을수록 하루 필요량과 실제 소비가 늘어난다', () => {
+test('데려온 가족이 많을수록 한 끼에 필요한 식량·물과 실제 소비가 늘어난다', () => {
   const used = {};
   for (const bring of [[], ['dad'], ['dad', 'mom'], ['dad', 'mom', 'sis']]) {
     const game = homeGame({ bring, stock: { food: 20, water: 20 } });
@@ -30,8 +30,9 @@ test('데려온 가족이 많을수록 하루 필요량과 실제 소비가 늘�
     assert.equal(need.people, bring.length + 1);
     assert.equal(need.food, bring.length + 1);
     assert.equal(need.water, bring.length + 1);
-    assert.equal(game.rationCount('food'), need.food, '기본 배급은 전원');
     resolveAnyEvent(game);
+    game.setAllRations(true); // 전원에게 한 끼씩
+    assert.equal(game.rationCount('food'), need.food);
     game.endDay();
     used[bring.length + 1] = { food: 20 - game.stock.food, water: 20 - game.stock.water };
   }
@@ -43,9 +44,31 @@ test('데려온 가족이 많을수록 하루 필요량과 실제 소비가 늘�
   });
 });
 
+test('식량·물 1개는 한 사람의 한 끼이고, 기본 배급표는 배고프거나 목마른 사람에게만 준다', () => {
+  const game = homeGame({ bring: ['dad'], stock: { food: 10, water: 10 } });
+  game.director.pick = () => null; // 사건 없이 배급만 본다
+  assert.equal(game.rationCount('food'), 0, '첫날은 아무도 배고프지 않다');
+  assert.equal(game.rationCount('water'), 0);
+  const drankOn = [];
+  const ateOn = [];
+  for (let i = 0; i < 9; i++) {
+    const before = { ...game.stock };
+    const day = game.day;
+    game.endDay();
+    if (game.stock.water < before.water) drankOn.push(day);
+    if (game.stock.food < before.food) ateOn.push(day);
+    assert.ok(game.me.thirst <= THIRST_NOTICE && game.me.hunger <= HUNGER_NOTICE, '기본 배급만으로 버틴다');
+  }
+  assert.deepEqual(drankOn, [3, 6, 9], `물은 ${THIRST_NOTICE + 1}일에 한 번`);
+  assert.deepEqual(ateOn, [4, 8], `식량은 ${HUNGER_NOTICE + 1}일에 한 번`);
+  assert.equal(game.stock.water, 10 - 3 * 2, '두 사람이 세 번 마셨다');
+  assert.equal(game.stock.food, 10 - 2 * 2);
+});
+
 test('배급을 받지 못하면 배고픔·목마름이 쌓이고, 받으면 회복한다', () => {
   const game = homeGame({ bring: ['dad'], stock: { food: 5, water: 5 } });
   resolveAnyEvent(game);
+  game.setAllRations(true);
   game.setRation('dad', 'food', false);
   game.setRation('dad', 'water', false);
   game.endDay();
@@ -61,6 +84,8 @@ test('배급을 받지 못하면 배고픔·목마름이 쌓이고, 받으면 �
 
 test('재고보다 많이 배급할 수는 없다', () => {
   const game = homeGame({ bring: ['dad', 'mom', 'sis'], stock: { food: 2, water: 1 } });
+  resolveAnyEvent(game);
+  game.setAllRations(true);
   assert.equal(game.rationCount('food'), 2);
   assert.equal(game.rationCount('water'), 1);
   const without = game.presentPeople().find((p) => !game.rations[p.id].water);
@@ -70,48 +95,40 @@ test('재고보다 많이 배급할 수는 없다', () => {
 
 test('물이 없으면 며칠 뒤 숨지고, 주인공이 숨지면 패배한다', () => {
   const game = homeGame({ bring: [], stock: { food: 50, water: 0 } });
-  let days = 0;
-  while (game.phase === 'home' && days < 20) {
-    resolveAnyEvent(game);
-    if (game.phase !== 'home') break;
-    game.endDay();
-    days += 1;
-  }
+  passDays(game, 20);
   assert.equal(game.phase, 'ending');
   assert.equal(game.ending.type, 'defeat');
   assert.equal(game.ending.id, 'died');
   assert.equal(game.ending.cause, '탈수');
   assert.equal(game.me.thirst, THIRST_DEATH);
+  assert.equal(game.ending.day, THIRST_DEATH, `물 없이 ${THIRST_DEATH}일째 밤에 숨진다`);
   assert.ok(THIRST_DEATH < HUNGER_DEATH);
 });
 
 test('치료하지 않은 부상은 악화되고, 구급약·엄마의 간호로 막을 수 있다', () => {
   const game = homeGame({ bring: ['mom', 'sis'], stock: { food: 50, water: 50 } });
+  game.director.pick = () => null; // 사건 없이 부상 진행만 본다
   const sis = game.person('sis');
   assert.equal(sis.health, 1, '동생은 다친 채로 시작');
-  for (let i = 0; i < INJURY_WORSEN_DAYS; i++) {
-    resolveAnyEvent(game);
-    if (sis.health !== 1 || game.phase !== 'home') break;
-    game.endDay();
-  }
-  // 사건으로 상태가 바뀌었을 수 있으니, 사건 없이 진행되는 부분만 엄격히 확인한다
-  if (game.phase === 'home' && sis.status === 'home') assert.ok(sis.health >= 2 || sis.untreated === 0);
+  const days = game.difficulty.worsenDays;
+  for (let i = 0; i < days - 1; i++) game.endDay();
+  assert.equal(sis.health, 1);
+  game.endDay();
+  assert.equal(sis.health, 2, `${days}일 동안 치료받지 못하면 중상으로 악화된다`);
 
   const g2 = homeGame({ bring: ['mom', 'sis'], stock: { food: 50, water: 50, med: 1 } });
+  g2.director.pick = () => null;
   const s2 = g2.person('sis');
-  resolveAnyEvent(g2);
-  assert.equal(g2.momCareReason('sis'), null);
-  assert.ok(g2.momCare('sis'));
-  assert.match(g2.momCareReason('sis'), /오늘/);
-  g2.endDay();
-  assert.equal(s2.untreated, 0, '간호받은 날은 악화가 진행되지 않는다');
-  resolveAnyEvent(g2);
-  const before = s2.health;
-  if (before > 0) {
-    assert.ok(g2.useMed('sis'));
-    assert.equal(s2.health, before - 1);
-    assert.equal(g2.stock.med, 0);
+  for (let i = 0; i < days + 2; i++) {
+    assert.equal(g2.momCareReason('sis'), null);
+    assert.ok(g2.momCare('sis'));
+    assert.match(g2.momCareReason('sis'), /오늘/);
+    g2.endDay();
+    assert.equal(s2.health, 1, '엄마가 매일 간호하면 악화되지 않는다');
   }
+  assert.ok(g2.useMed('sis'));
+  assert.equal(s2.health, 0, '구급약으로 낫는다');
+  assert.equal(g2.stock.med, 0);
 });
 
 test('사건을 해결하기 전에는 하루를 마치거나 탐사를 보낼 수 없다', () => {

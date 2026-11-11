@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PLAYER_SPEED, RUN_SECONDS, SIM_STEP } from '../src/core/constants.js';
+import { PICKUP_SECONDS, PLAYER_SPEED, RUN_SECONDS, SIM_STEP } from '../src/core/constants.js';
 import { Game } from '../src/core/game.js';
 import { ITEMS } from '../src/core/items.js';
 import { pickupPreview, spawnZombie } from '../src/core/run.js';
-import { HOME_ZONE, MART_DOORS, SHELVES, inMart } from '../src/core/world.js';
+import { HOME_DOOR, HOME_ZONE, MART_DOORS, SHELVES, dist, inMart } from '../src/core/world.js';
 import { RunBot, standPoint } from './helpers/bot.mjs';
 import { HOME_SPOT, dropAtHome, enterHome, pickHere, teleport } from './helpers/setup.mjs';
 import { playScramble } from './helpers/strategy.mjs';
 
 const shelfOf = (itemId) => SHELVES.find((s) => s.itemId === itemId);
 
-function startGame(seed = 3, zombies = false) {
-  const game = new Game({ seed, zombies });
+function startGame(seed = 3, zombies = false, difficulty = 'hard') {
+  const game = new Game({ seed, zombies, difficulty });
   game.startFirstRun();
   return game;
 }
@@ -41,7 +41,7 @@ test('60초 탐색은 마트 안에서 시작하고, 시작 버튼을 누르기 
   assert.ok(Math.abs(game.run.timeLeft - (RUN_SECONDS - 1)) < 1e-9);
 });
 
-test('집 밖 이동 속도가 빨라졌다: 빈손으로 마트 정문에서 집까지 8초 안쪽', () => {
+test('마트 정문에서 집까지 빈손으로 5초 안쪽이라, 60초 안에 여러 번 오갈 수 있다', () => {
   assert.ok(PLAYER_SPEED >= 150);
   const game = startGame();
   teleport(game, MART_DOORS[0].outside);
@@ -50,7 +50,27 @@ test('집 밖 이동 속도가 빨라졌다: 빈손으로 마트 정문에서 �
   for (let i = 0; i < 2000 && game.phase === 'run'; i++) game.stepRun(SIM_STEP, bot.next(game.run));
   const seconds = game.lastRun.elapsed - start;
   assert.equal(game.lastRun.endedBy, 'enter');
-  assert.ok(seconds < 8, `${seconds.toFixed(2)}초`);
+  assert.ok(seconds < 5, `${seconds.toFixed(2)}초`);
+});
+
+test('물품이든 가족이든 가방에 넣는 데 0.3초가 걸린다', () => {
+  assert.equal(PICKUP_SECONDS, 0.3);
+  const game = startGame();
+  const run = game.run;
+  for (const where of [standPoint(shelfOf('medkit'), run.player), run.ground.find((g) => g.id === 'dad')]) {
+    game.inventory.takeAll();
+    teleport(game, where);
+    assert.equal(pickupPreview(run).seconds, 0.3);
+    const before = run.elapsed;
+    game.stepRun(SIM_STEP, { interact: true });
+    let steps = 1;
+    while (run.pickup && steps < 100) {
+      game.stepRun(SIM_STEP, {});
+      steps += 1;
+    }
+    assert.equal(game.inventory.items.length, 1);
+    assert.ok(Math.abs(run.elapsed - before - 0.3) < 0.05, `${(run.elapsed - before).toFixed(3)}초`);
+  }
 });
 
 test('집기 전에 필요한 칸 수와 남은 칸을 알려 주고, 칸이 모자라면 집지 못한다', () => {
@@ -93,15 +113,17 @@ test('집 앞에 물품을 내려놓아도 탐색은 계속되고, 60초 안에 
   game.stepRun(1, {});
   assert.ok(game.run.timeLeft < t, '시간은 계속 흐른다');
 
-  grab(game, 'waterPack');
+  grab(game, 'water');
+  grab(game, 'canned');
   dropAtHome(game);
-  assert.deepEqual(game.run.delivered, ['radio', 'battery', 'waterPack']);
+  assert.deepEqual(game.run.delivered, ['radio', 'battery', 'water', 'canned']);
   assert.equal(game.stock.water, 0, '재고에는 탐색이 끝날 때 들어간다');
   enterHome(game);
   assert.equal(game.phase, 'home');
   assert.equal(game.stock.radio, 1);
-  assert.equal(game.stock.battery, ITEMS.battery.gives.battery);
-  assert.equal(game.stock.water, ITEMS.waterPack.gives.water);
+  assert.equal(game.stock.battery, 1);
+  assert.equal(game.stock.water, 1, '생수 1개를 챙겼으면 물 1');
+  assert.equal(game.stock.food, 1, '통조림 1개를 챙겼으면 식량 1');
 });
 
 test('가족도 칸을 차지하는 짐처럼 데려와야 하고, 데려오지 못한 가족은 남겨진다', () => {
@@ -140,10 +162,10 @@ test('집 밖에서 내려놓은 가족·물품은 그 자리에 남아 다시 �
   const run = game.run;
   teleport(game, run.ground.find((g) => g.id === 'sis'));
   pickHere(game);
-  teleport(game, { x: 1300, y: 690 });
+  teleport(game, { x: 900, y: 690 });
   game.stepRun(SIM_STEP, { drop: 0 });
   const waiting = run.ground.find((g) => g.id === 'sis');
-  assert.ok(waiting && Math.abs(waiting.x - 1300) < 1, '동생이 내려놓은 자리에서 기다린다');
+  assert.ok(waiting && Math.abs(waiting.x - 900) < 1, '동생이 내려놓은 자리에서 기다린다');
   pickHere(game);
   assert.deepEqual(game.inventory.items, ['sis']);
 });
@@ -162,7 +184,7 @@ test('60초가 끝날 때 집 밖에 있으면 패배한다', () => {
   const game = startGame(5);
   grab(game, 'canned');
   dropAtHome(game); // 물건을 들여놓았더라도
-  teleport(game, { x: 1200, y: 100 });
+  teleport(game, { x: 900, y: 100 });
   for (let i = 0; i < (RUN_SECONDS + 1) / SIM_STEP && game.phase === 'run'; i++) game.stepRun(SIM_STEP, {});
   assert.equal(game.phase, 'ending');
   assert.equal(game.ending.id, 'timeout');
@@ -186,23 +208,39 @@ test('좀비에게 붙잡히면 패배하지만, 집 문간에 들어서면 잡�
   assert.ok(safe.run.zombies.every((z) => z.x < HOME_ZONE.x), '좀비는 문간 안으로 들어오지 못한다');
 });
 
-test('물자 한 번 왕복과 가족 3명 구출을 60초 안에 해낼 수 있다(좀비 없음)', () => {
+test('문간에 들어서면 쫓아오던 좀비가 흩어져, 다시 마트로 나갈 틈이 생긴다', () => {
+  const game = startGame(5, true);
+  const run = game.run;
+  run.zombies.length = 0;
+  teleport(game, { x: HOME_ZONE.x - 60, y: HOME_SPOT.y });
+  const z = spawnZombie(run, 'street', { x: HOME_ZONE.x - 130, y: HOME_SPOT.y });
+  z.chasing = true;
+  teleport(game, HOME_SPOT);
+  game.stepRun(SIM_STEP, {});
+  assert.equal(z.chasing, false, '먹잇감을 놓친다');
+  const before = dist(z, HOME_DOOR);
+  for (let i = 0; i < 90; i++) game.stepRun(SIM_STEP, {});
+  assert.ok(dist(z, HOME_DOOR) > before + 40, `문에서 멀어진다 (${before.toFixed(0)} → ${dist(z, HOME_DOOR).toFixed(0)})`);
+  assert.equal(z.chasing, false, '흩어지는 동안에는 다시 알아채지 못한다');
+});
+
+test('마트 두 번 왕복과 가족 3명 구출을 60초 안에 해낼 수 있다(좀비 없음)', () => {
   const game = startGame(7);
-  const result = playScramble(game, [['radio', 'battery', 'flare', 'water'], ['dad'], ['mom', 'sis']]);
+  const result = playScramble(game, [['radio', 'battery', 'flare', 'water'], ['dad'], ['mom', 'sis'], ['water', 'water', 'canned', 'canned']]);
   assert.equal(result.outcome, 'home');
   assert.deepEqual(result.family.sort(), ['dad', 'mom', 'sis']);
-  assert.equal(result.items.length, 4);
-  assert.ok(result.elapsed > 20, `${result.elapsed.toFixed(1)}초`);
+  assert.equal(result.items.length, 8);
   assert.equal(game.presentPeople().length, 4);
 });
 
-test('가족을 포기하면 그 시간에 마트를 한 번 더 다녀올 수 있다(좀비 없음)', () => {
+test('가족을 포기하면 마트를 세 번 왕복할 수 있다(좀비 없음)', () => {
   const game = startGame(7);
-  const result = playScramble(game, [['waterPack', 'ration'], ['waterPack', 'ration']]);
+  const trip = ['water', 'water', 'canned', 'canned'];
+  const result = playScramble(game, [trip, trip, trip, trip]);
   assert.equal(result.outcome, 'home');
-  assert.equal(result.items.length, 4);
+  assert.ok(result.items.length >= 12, `물품 ${result.items.length}개`);
   assert.equal(result.family.length, 0);
-  assert.equal(game.stock.water, 2 * ITEMS.waterPack.gives.water);
+  assert.equal(game.stock.water + game.stock.food, result.items.length, '챙긴 개수 그대로 재고가 된다');
 });
 
 test('방향키 하나로 선반 모서리를 스치며 지나가도 걸리지 않는다', () => {

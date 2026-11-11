@@ -6,15 +6,15 @@
 // - 60초가 끝날 때 도착 구역 안에 있으면 무사, 밖에 있으면 패배.
 import {
   INJURY_SPEED_PENALTY,
-  PERSON_PICKUP_SECONDS,
   PICK_RANGE,
-  PICKUP_SECONDS_PER_SLOT,
+  PICKUP_SECONDS,
   PLAYER_RADIUS,
   PLAYER_SPEED,
   RUN_SECONDS,
   WEIGHT_PENALTY_PER_SLOT,
   ZOMBIE_RADIUS,
 } from './constants.js';
+import { DIFFICULTIES } from './difficulty.js';
 import { carryInfo, isPerson } from './inventory.js';
 import { josa } from './text.js';
 import {
@@ -34,21 +34,15 @@ import {
   moveCircle,
 } from './world.js';
 
-/** 좀비 수·속도·시야 */
-export const RUN_DANGER = {
-  martZombies: 2, // 마트 입구 쪽에서 어슬렁거리는 좀비
-  streetZombies: 2,
-  spawnInterval: 9, // 거리 가장자리에서 새 좀비가 나타나는 간격(초)
-  maxZombies: 8,
-  speedMin: 44,
-  speedMax: 66,
-  sight: 220, // 이 거리 안에 들어오면 쫓아오기 시작한다(벽·선반 너머는 못 본다)
-};
+/** 좀비 수·속도·시야의 기준값(하드). 실제 값은 난이도(difficulty.js)가 정한다. */
+export const RUN_DANGER = DIFFICULTIES.hard.run;
 
 export const HEARING_FACTOR = 0.6; // 물건을 집는 동안은 시야의 이 비율 안에서는 벽 너머로도 소리를 듣는다
 export const SIGHT_GROWTH_PER_SECOND = 2; // 시간이 흐를수록 좀비 떼가 더 넓게 몰려든다
 export const LOSE_SIGHT_FACTOR = 1.5; // 쫓던 좀비는 시야의 이 배수만큼 멀어져야 놓친다
 export const WANDER_SPEED_FACTOR = 0.35;
+export const SCATTER_RADIUS = 300; // 문간에 들어서면 이 거리 안의 좀비가 흥미를 잃고 흩어진다
+export const SCATTER_SECONDS = 2.5; // 흩어지는 동안에는 다시 알아채지 못한다
 
 // 좀비는 집 앞 도착 구역(문간)에 들어오지 못한다.
 const ZOMBIE_SOLIDS = [...SOLIDS, HOME_ZONE];
@@ -144,7 +138,7 @@ export function pickupPreview(run) {
     need: info.slots,
     free: run.inventory.free,
     canFit: run.inventory.canAdd(info.id),
-    seconds: info.kind === 'person' ? PERSON_PICKUP_SECONDS : info.slots * PICKUP_SECONDS_PER_SLOT,
+    seconds: PICKUP_SECONDS,
   };
 }
 
@@ -267,7 +261,9 @@ export function stepRun(run, dt, input = {}) {
     run.player.faceY = my;
   }
 
+  const wasHome = run.atHome;
   run.atHome = inRect(run.player, HOME_ZONE);
+  if (run.atHome && !wasHome) scatterZombies(run);
   if (run.atHome && !run.pickup) deliverAll(run);
 
   if (run.zombiesEnabled) {
@@ -288,6 +284,20 @@ export function stepRun(run, dt, input = {}) {
 }
 
 // ── 좀비 ───────────────────────────────────────
+
+/** 문간에 들어서면 집 근처 좀비가 먹잇감을 놓치고 흩어진다. 다시 나갈 틈이 생긴다. */
+function scatterZombies(run) {
+  for (const z of run.zombies) {
+    z.chasing = false;
+    const d = dist(z, HOME_DOOR);
+    if (d > SCATTER_RADIUS) continue;
+    const away = Math.atan2(z.y - HOME_DOOR.y, z.x - HOME_DOOR.x) + run.rng.float(-0.5, 0.5);
+    z.scatter = SCATTER_SECONDS;
+    z.detour = SCATTER_SECONDS;
+    z.detourX = Math.cos(away);
+    z.detourY = Math.sin(away);
+  }
+}
 
 function randomPoint(run, area, minDistance) {
   const { rng } = run;
@@ -326,6 +336,7 @@ export function spawnZombie(run, area, at = null) {
     detourX: 0,
     detourY: 0,
     chasing: false,
+    scatter: 0,
     wanderX: p.x,
     wanderY: p.y,
     wanderTimer: 0,
@@ -371,7 +382,9 @@ function updateZombies(run, dt) {
   const { player } = run;
   const sight = zombieSight(run);
   for (const z of run.zombies) {
-    if (!z.chasing) {
+    if (z.scatter > 0) {
+      z.scatter -= dt;
+    } else if (!z.chasing) {
       if (noticesPlayer(run, z, sight)) z.chasing = true;
     } else if (dist(z, player) > sight * LOSE_SIGHT_FACTOR) {
       z.chasing = false;

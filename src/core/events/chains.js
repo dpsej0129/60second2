@@ -217,7 +217,7 @@ const GROUP = {
   icon: '🏚️',
   title: '강변 거점 합류',
   openWindow: [3, 6],
-  initData: () => ({ food: 4, water: 4, trust: null, joinDay: null, delays: 0 }),
+  initData: () => ({ food: 3, water: 3, trust: null, joinDay: null, delays: 0 }),
   stages: [
     {
       id: 'group_scout',
@@ -230,16 +230,16 @@ const GROUP = {
         {
           id: 'talk',
           label: '문을 열고 교섭한다',
-          note: '합류 조건: 식량 4 · 물 4',
-          resolve: (ctx) => openGroup(ctx, 4, 4, '상대는 총구를 내리고 조건을 말했다.'),
+          note: '합류 조건: 식량 3 · 물 3',
+          resolve: (ctx) => openGroup(ctx, 3, 3, '상대는 총구를 내리고 조건을 말했다.'),
         },
         {
           id: 'dad',
           who: 'dad',
           label: '아빠가 문 앞에서 경계하며 교섭한다',
-          note: '더 나은 조건: 식량 3 · 물 3',
+          note: '더 나은 조건: 식량 2 · 물 2',
           check: needCapable('dad'),
-          resolve: (ctx) => openGroup(ctx, 3, 3, '아빠의 단호한 태도에 상대가 한발 물러섰다.'),
+          resolve: (ctx) => openGroup(ctx, 2, 2, '아빠의 단호한 태도에 상대가 한발 물러섰다.'),
         },
         {
           id: 'refuse',

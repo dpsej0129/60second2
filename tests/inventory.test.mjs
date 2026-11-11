@@ -14,6 +14,14 @@ test('가방은 4칸이고 물품마다 차지하는 칸 수가 다르다', () =
   assert.equal(ITEMS.fuel.slots, 2);
 });
 
+test('식량·물은 챙긴 개수 그대로 재고가 된다(1개 = 1)', () => {
+  assert.deepEqual(ITEMS.canned.gives, { food: 1 });
+  assert.deepEqual(ITEMS.water.gives, { water: 1 });
+  assert.deepEqual(ITEMS.battery.gives, { battery: 1 });
+  assert.equal(ITEMS.ration, undefined, '묶음 식량은 없다');
+  assert.equal(ITEMS.waterPack, undefined, '묶음 생수는 없다');
+});
+
 test('가족도 물품처럼 칸을 차지한다', () => {
   assert.equal(carryInfo('dad').slots, 3);
   assert.equal(carryInfo('mom').slots, 2);

@@ -159,11 +159,11 @@ export class RunView {
         <p>정전된 매장 밖에서 좀비의 신음이 들린다. 카운트다운이 시작되면 좀비가 몰려온다.
            <b>60초 동안</b> 마트와 지도 오른쪽 끝의 <b>집</b>을 오가며 물자와 가족을 집으로 옮겨야 한다.</p>
         <ul>
-          <li>가방은 <b>4칸</b>. 생수·통조림은 1칸, 대형 구급상자·생수 묶음 같은 큰 물건은 2칸을 차지한다.</li>
-          <li>집 앞 <b>도착 구역</b>에 들어서면 가방이 저절로 비워지고, 다시 나가서 더 가져올 수 있다.</li>
+          <li>가방은 <b>4칸</b>. 생수·통조림은 1칸(1개 = 식량·물 1), 대형 구급상자·공구 상자·연료통은 2칸을 차지한다.</li>
+          <li>집 앞 <b>도착 구역</b>에 들어서면 가방이 저절로 비워지고 주변 좀비가 흩어진다. 몇 번이고 다시 다녀올 수 있다.</li>
           <li>집 주변에 숨은 <b>가족도 칸을 차지한다</b>(아빠 3칸, 엄마·동생 2칸). 데려오지 못한 가족은 남겨진다.</li>
           <li><b>60초가 끝날 때 도착 구역 안에 있어야 산다.</b> 일찍 끝내려면 도착 구역에서 <kbd>E</kbd>로 문을 잠그고 들어간다.</li>
-          <li>물건을 집는 동안은 움직일 수 없고, 소리 때문에 좀비가 알아채기 쉽다. 선반과 벽 뒤에 숨으면 좀비가 보지 못한다.</li>
+          <li>줍는 데는 0.3초. 선반과 벽 뒤에 숨으면 좀비가 보지 못한다.</li>
         </ul>
         <button type="button" class="btn primary big" data-action="start-run">카운트다운 시작 <kbd>Enter</kbd></button>
       </div>`;
@@ -362,9 +362,9 @@ export class RunView {
       const item = carryInfo(run.pickup.id);
       prompt.hidden = false;
       prompt.className = 'run-prompt busy';
-      prompt.innerHTML = `${esc(item.name)} ${item.kind === 'person' ? '부축하는 중' : '집는 중'}… ${(run.pickup.duration - run.pickup.t).toFixed(1)}초 <small>움직이면 취소</small>`;
+      prompt.innerHTML = `${esc(item.name)} ${item.kind === 'person' ? '데려가는 중' : '집는 중'}…`;
     } else if (preview) {
-      const { item, stock, need, free, canFit, seconds } = preview;
+      const { item, stock, need, free, canFit } = preview;
       const person = item.kind === 'person';
       prompt.hidden = false;
       let state;
@@ -373,8 +373,8 @@ export class RunView {
       else state = `<em class="ok">[E] ${person ? '데려가기' : '집기'}</em>`;
       prompt.className = 'run-prompt';
       prompt.innerHTML = person
-        ? `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)} · 부축하는 시간 ${seconds.toFixed(1)}초 ${state}`
-        : `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)} · 줍는 시간 ${seconds.toFixed(1)}초${preview.shelf ? ` · 남은 수량 ${stock}` : ' · 바닥에 놓인 것'} ${state}`;
+        ? `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)} ${state}`
+        : `<strong>${esc(item.name)}</strong> <span class="slots">${need}칸 필요</span> · 남은 칸 ${free} · ${esc(item.note)}${preview.shelf ? ` · 남은 수량 ${stock}` : ' · 바닥에 놓인 것'} ${state}`;
     } else if (run.atHome) {
       prompt.hidden = false;
       prompt.className = 'run-prompt home';

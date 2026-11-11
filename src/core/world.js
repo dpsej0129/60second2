@@ -1,7 +1,7 @@
 // 실시간 구간의 지도: 왼쪽 대형 마트 → 차가 버려진 거리 → 오른쪽 집.
 import { ITEMS } from './items.js';
 
-export const WORLD = { w: 2000, h: 720 };
+export const WORLD = { w: 1540, h: 720 }; // 마트를 여러 번 오갈 수 있게 거리를 짧게 잡았다
 
 const rect = (x, y, w, h, kind) => ({ x, y, w, h, kind });
 
@@ -31,23 +31,23 @@ const RACK_H = 170;
 export const RACKS = RACK_COLS.flatMap((x) => RACK_ROWS.map((y) => rect(x, y, 44, RACK_H, 'rack')));
 
 // [선반 열, 줄(0 위/1 아래), 칸(0 위쪽/1 아래쪽), 물품, 수량]
-// 문에서 먼 안쪽일수록 귀한 물건이 있다.
+// 문에서 먼 안쪽일수록 귀한 물건이 있다. 식량·물은 여러 번 오가도 남을 만큼 넉넉하다.
 const SHELF_LAYOUT = [
   [0, 0, 0, 'medkit', 2],
   [0, 0, 1, 'radio', 1],
   [0, 1, 0, 'bandage', 3],
   [0, 1, 1, 'toolkit', 1],
-  [1, 0, 0, 'battery', 3],
+  [1, 0, 0, 'battery', 4],
   [1, 0, 1, 'flare', 2],
-  [1, 1, 0, 'ration', 3],
+  [1, 1, 0, 'canned', 6],
   [1, 1, 1, 'roadmap', 1],
-  [2, 0, 0, 'waterPack', 3],
-  [2, 0, 1, 'canned', 4],
+  [2, 0, 0, 'water', 6],
+  [2, 0, 1, 'canned', 6],
   [2, 1, 0, 'bat', 1],
   [2, 1, 1, 'fuel', 3],
-  [3, 0, 0, 'water', 4],
-  [3, 0, 1, 'canned', 4],
-  [3, 1, 0, 'water', 4],
+  [3, 0, 0, 'water', 6],
+  [3, 0, 1, 'canned', 6],
+  [3, 1, 0, 'water', 6],
 ];
 
 export const SHELVES = SHELF_LAYOUT.map(([col, row, slot, itemId, stock], i) => {
@@ -64,44 +64,32 @@ export const SHELVES = SHELF_LAYOUT.map(([col, row, slot, itemId, stock], i) => 
 });
 
 export const CARS = [
-  rect(820, 140, 150, 64, 'car'),
-  rect(880, 540, 160, 64, 'car'),
-  rect(1080, 300, 64, 150, 'car'),
-  rect(1240, 120, 160, 64, 'car'),
-  rect(1280, 560, 160, 64, 'car'),
-  rect(1440, 330, 64, 150, 'car'),
-  rect(1560, 150, 120, 64, 'car'),
-  rect(1540, 520, 140, 64, 'car'),
+  rect(790, 150, 140, 60, 'car'),
+  rect(850, 540, 150, 60, 'car'),
+  rect(1010, 300, 60, 130, 'car'),
+  rect(1060, 130, 120, 60, 'car'),
+  rect(1090, 560, 130, 60, 'car'),
 ];
 
-export const HOUSE = rect(1760, 250, 200, 220, 'house');
-export const HOME_DOOR = { x: 1760, y: 360 };
-export const HOME_ZONE = rect(1716, 320, 44, 80, 'home-zone'); // 이 안에 들어오면 집 도착
+export const HOUSE = rect(1300, 250, 200, 220, 'house');
+export const HOME_DOOR = { x: 1300, y: 360 };
+export const HOME_ZONE = rect(1256, 320, 44, 80, 'home-zone'); // 이 안에 들어오면 집 도착
 
 export const START = { x: 92, y: 360 }; // 마트 안쪽에서 시작
 
 // 집 주변에 흩어져 숨어 있는 가족(데려와야 하는 '물품'처럼 칸을 차지한다)
 export const FAMILY_SPOTS = {
-  dad: { x: 1620, y: 80 },
-  mom: { x: 1900, y: 640 },
-  sis: { x: 1460, y: 680 },
+  dad: { x: 1230, y: 90 },
+  mom: { x: 1440, y: 640 },
+  sis: { x: 1050, y: 672 },
 };
 
-export const STREET = rect(760, 24, 880, 672, 'street'); // 거리 좀비가 나타나는 영역
+export const STREET = rect(760, 24, 420, 672, 'street'); // 거리 좀비가 나타나는 영역
 
 export const SOLIDS = [...WALLS, ...RACKS, ...CARS, HOUSE];
 
 export function initialMartStock() {
   return Object.fromEntries(SHELVES.map((s) => [s.id, s.initialStock]));
-}
-
-/** 물품별 남은 수량 합계 */
-export function martSummary(martStock) {
-  const summary = {};
-  for (const shelf of SHELVES) {
-    summary[shelf.itemId] = (summary[shelf.itemId] ?? 0) + (martStock[shelf.id] ?? 0);
-  }
-  return summary;
 }
 
 export function inRect(p, r) {

@@ -1,6 +1,6 @@
 // 집 안 장면(SVG): 집에 있는 사람과 재고 물품을 그림으로 보여 준다.
 // 재고가 생기면 선반에 물건이 나타나고, 다 쓰면 사라진다. 사람은 상태에 따라 모습이 바뀐다.
-import { HUNGER_WEAK, THIRST_WEAK } from '../core/constants.js';
+import { HUNGER_NOTICE, HUNGER_WEAK, THIRST_NOTICE, THIRST_WEAK } from '../core/constants.js';
 import { RESOURCES } from '../core/items.js';
 import { esc } from './dom.js';
 
@@ -131,8 +131,8 @@ function figure(p, mood) {
 }
 
 function needBubble(p) {
-  const hungry = p.hunger >= 2;
-  const thirsty = p.thirst >= 1;
+  const hungry = p.hunger >= HUNGER_NOTICE;
+  const thirsty = p.thirst >= THIRST_NOTICE;
   if (!hungry && !thirsty) return '';
   const danger = p.hunger >= HUNGER_WEAK || p.thirst >= THIRST_WEAK;
   const icons = [];
@@ -149,7 +149,7 @@ function needBubble(p) {
 function person(p, x, index) {
   const critical = p.health >= 2;
   const weak = p.hunger >= HUNGER_WEAK || p.thirst >= THIRST_WEAK;
-  const mood = critical || weak ? 'bad' : p.health >= 1 || p.hunger >= 2 || p.thirst >= 1 ? 'warn' : 'ok';
+  const mood = critical || weak ? 'bad' : p.health >= 1 || p.hunger >= HUNGER_NOTICE || p.thirst >= THIRST_NOTICE ? 'warn' : 'ok';
   const label = `<text class="shelter-name" x="0" y="22" text-anchor="middle">${esc(p.name)}</text>`;
   if (critical) {
     // 중상: 매트에 누워 있다
@@ -164,14 +164,52 @@ function person(p, x, index) {
       ${label}</g>`;
 }
 
+// ── 보리와 감자 화분 ─────────────────────────────
+
+function dog(x) {
+  return `<g class="shelter-dog" data-pet="dog" transform="translate(${x} ${FLOOR})">
+      <ellipse cx="0" cy="0" rx="26" ry="4" fill="rgba(0,0,0,.35)"/>
+      <path class="tail" d="M-22,-22 Q-34,-34 -28,-44" fill="none" stroke="#c98f4a" stroke-width="5" stroke-linecap="round"/>
+      <rect x="-24" y="-28" width="40" height="18" rx="9" fill="#d9a35c"/>
+      <rect x="-20" y="-14" width="6" height="14" rx="3" fill="#c98f4a"/>
+      <rect x="6" y="-14" width="6" height="14" rx="3" fill="#c98f4a"/>
+      <circle cx="18" cy="-32" r="11" fill="#d9a35c"/>
+      <path d="M10,-40 L8,-50 L17,-43 Z" fill="#a9743a"/>
+      <path d="M22,-42 L27,-50 L28,-40 Z" fill="#a9743a"/>
+      <ellipse cx="27" cy="-29" rx="6" ry="4.5" fill="#f1dcc0"/>
+      <circle cx="31" cy="-30" r="2" fill="#222"/>
+      <circle cx="19" cy="-35" r="1.8" fill="#222"/>
+      <text class="shelter-name" x="0" y="22" text-anchor="middle">보리</text></g>`;
+}
+
+function planter(stage, yieldCount) {
+  const sprouts = stage === 0 ? 2 : Math.min(5, yieldCount);
+  let leaves = '';
+  for (let i = 0; i < sprouts; i++) {
+    const x = sprouts > 1 ? 12 + (i * 56) / (sprouts - 1) : 40;
+    const h = stage === 0 ? 8 : 16;
+    leaves += `<path d="M${x},-18 q-6,-${h} -1,-${h + 6} M${x},-18 q6,-${h} 1,-${h + 4}" fill="none" stroke="#6fbf5f" stroke-width="3" stroke-linecap="round"/>`;
+  }
+  // 창턱 위에 올려 둔 스티로폼 화분
+  return `<g data-ref="planter" transform="translate(465 130)">
+      <rect x="-6" y="0" width="92" height="5" fill="#5b4330"/>
+      <rect x="0" y="-18" width="80" height="18" rx="2" fill="#e9e4d8"/>
+      <rect x="4" y="-18" width="72" height="5" fill="#5a4330"/>
+      ${leaves}</g>`;
+}
+
 // ── 방 ────────────────────────────────────────
 
 export function renderShelter(game) {
   const present = game.presentPeople();
   const away = game.people.filter((p) => p.status === 'away');
-  const startX = 470;
-  const step = present.length > 3 ? 104 : 120;
+  const startX = 450;
+  const step = present.length > 3 ? 100 : 116;
   const people = present.map((p, i) => person(p, startX + i * step, i)).join('');
+  const garden = game.director.chains.garden;
+  const gardenActive = garden.opened && !['done', 'failed'].includes(garden.status);
+  const pets = game.flags.dog ? dog(812) : '';
+  const plants = gardenActive ? planter(garden.stage, 2 + garden.data.care) : '';
   const awayNote = away.length
     ? `<g transform="translate(866 132)"><rect x="0" y="0" width="60" height="40" fill="#efe6cf" transform="rotate(4)"/>
         <text class="shelter-note" x="30" y="17" text-anchor="middle" transform="rotate(4)">${esc(away[0].name)}</text>
@@ -181,7 +219,7 @@ export function renderShelter(game) {
     .filter(([, n]) => n > 0)
     .map(([k, n]) => `${RESOURCES[k].name} ${n}`)
     .join(', ');
-  const label = `집 안: ${present.map((p) => p.name).join(', ')}${away.length ? ` (탐사 중: ${away.map((p) => p.name).join(', ')})` : ''}. 재고: ${items || '없음'}`;
+  const label = `집 안: ${present.map((p) => p.name).join(', ')}${game.flags.dog ? ', 보리(개)' : ''}${away.length ? ` (탐사 중: ${away.map((p) => p.name).join(', ')})` : ''}. 재고: ${items || '없음'}`;
   return `
     <svg class="shelter" viewBox="0 0 960 300" role="img" aria-label="${esc(label)}" data-ref="shelter">
       <rect x="0" y="0" width="960" height="${FLOOR}" fill="#3a3129"/>
@@ -202,6 +240,8 @@ export function renderShelter(game) {
       <rect x="846" y="150" width="96" height="10" fill="#3a2416"/>
       ${awayNote}
       ${shelves(game.stock)}
+      ${plants}
       ${people}
+      ${pets}
     </svg>`;
 }

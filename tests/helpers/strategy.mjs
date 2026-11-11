@@ -1,8 +1,8 @@
 // 게임 전체를 대신 플레이하는 전략(검증 도구). 목표 승리 경로(target)를 정하면
 // 그 경로의 사건은 수락하고 나머지 경로는 거절하며, 필요한 물자를 탐사로 구해 온다.
 //   target: 'rescue' | 'group' | 'car' | 'all'(모든 경로 수락) | 'none'(모든 경로 거절)
-import { SIM_STEP } from '../../src/core/constants.js';
-import { isCapable } from '../../src/core/people.js';
+import { HUNGER_NOTICE, SIM_STEP, THIRST_NOTICE } from '../../src/core/constants.js';
+import { quizAnswerId } from '../../src/core/events/missions.js';
 import { RunBot, scramblePlan } from './bot.mjs';
 
 const CHAIN_PREFS = {
@@ -17,6 +17,16 @@ const CHAIN_PREFS = {
   car_depart: { go: ['go'], stop: ['wait'] },
 };
 
+// 미션 단계(항상 진행하는 쪽으로)
+const MISSION_PREFS = {
+  dog_dig: ['dig'],
+  dog_hungry: ['feed', 'none'],
+  garden_sprout: ['scarecrow', 'water', 'leave'],
+  garden_harvest: ['replant', 'harvest'],
+  dj_cache: ['dad', 'skip'],
+  granny_gift: ['share'],
+};
+
 const RANDOM_PREFS = {
   raid: ['dad', 'bat', 'hide'],
   looters: ['dad', 'bat', 'give'],
@@ -27,6 +37,13 @@ const RANDOM_PREFS = {
   lost_child: ['refuse'],
   family_return: ['accept'],
   quarrel: ['stop'],
+  dog_stray: ['adopt', 'shoo'],
+  garden_find: ['plant', 'eat'],
+  airdrop: ['dad', 'skip'],
+  gambler: ['decline'],
+  vending: ['toolkit', 'coin'],
+  mystery_cans: ['dog', 'open'],
+  granny_knock: ['mom', 'med', 'ignore'],
 };
 
 const wants = (target, chainId) => target === 'all' || target === chainId;
@@ -36,7 +53,11 @@ export function chooseOption(game, target) {
   const view = game.eventView();
   const enabled = view.options.filter((o) => !o.disabled).map((o) => o.id);
   let prefs;
-  if (view.chainId) {
+  if (MISSION_PREFS[view.id]) {
+    prefs = MISSION_PREFS[view.id];
+  } else if (view.id === 'dj_quiz') {
+    prefs = [quizAnswerId(game.event.params), 'skip'];
+  } else if (view.chainId) {
     const p = CHAIN_PREFS[view.id];
     prefs = wants(target, view.chainId) ? [...p.go, ...p.stop] : p.stop;
   } else {
@@ -56,17 +77,18 @@ export function reserveFor(game, target) {
 
 // ── 60초 탐색 ─────────────────────────────────
 
-/** 60초 계획: 첫 마트 왕복 → 가족 → (시간이 되면) 두 번째 마트 왕복 → 집으로 들어가기 */
+/** 60초 계획: 첫 마트 왕복(경로에 필요한 물건) → 가족 → 시간이 되는 만큼 식량·물 왕복 → 집으로 들어가기 */
 export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
-  let first = ['waterPack', 'ration'];
-  if (target === 'rescue' || target === 'all') first = ['radio', 'battery', 'flare', 'water'];
+  let first = ['water', 'water', 'canned', 'canned'];
+  if (target === 'rescue' || target === 'all') first = ['radio', 'battery', 'battery', 'flare'];
   if (target === 'car') first = ['toolkit', 'roadmap', 'water'];
+  if (target === 'group') first = ['medkit', 'water', 'canned'];
   const legs = [first];
   if (bring.includes('dad')) legs.push(['dad']);
   const pair = ['mom', 'sis'].filter((id) => bring.includes(id));
   if (pair.length) legs.push(pair);
-  legs.push(['waterPack', 'ration']);
-  legs.push(['canned', 'water', 'canned', 'water']);
+  if (target === 'car') legs.push(['fuel', 'fuel']);
+  for (let i = 0; i < 4; i++) legs.push(['water', 'water', 'canned', 'canned']);
   return legs;
 }
 
@@ -80,58 +102,24 @@ export function playScramble(game, legs, botOptions) {
 
 // ── 탐사 ─────────────────────────────────────
 
-function pathTargets(game, target) {
-  const s = game.stock;
-  const sis = game.person('sis');
-  const out = [];
-  if (wants(target, 'rescue') && active(game, 'rescue')) {
-    if (!s.radio && !isCapable(sis)) out.push('radio');
-    if (s.battery < 2) out.push('battery');
-    if (!s.flare) out.push('flare');
-  }
-  if (wants(target, 'car') && active(game, 'car')) {
-    if (!s.toolkit && !isCapable(sis)) out.push('toolkit');
-    if (s.fuel < 2) out.push('fuel');
-    if (!s.map) out.push('roadmap');
-  }
-  if (wants(target, 'group') && s.med < 1) out.push('medical');
-  return out;
-}
-
-/** 탐사로 무엇을 찾을지. 필요 없으면 null */
-export function expeditionTarget(game, target) {
-  const n = Math.max(1, game.presentPeople().length);
-  const reserve = reserveFor(game, target);
-  const remaining = Object.fromEntries(game.expeditionTargets().map((t) => [t.id, t.remaining]));
-  const short = game.stock.water < 3 * n + reserve.water || game.stock.food < 2 * n + reserve.food;
-  const urgent = game.stock.water < n + reserve.water || game.stock.food < n + reserve.food;
-  if (urgent && remaining.supplies > 0) return 'supplies';
-  const needed = pathTargets(game, target).find((id) => remaining[id] > 0);
-  if (needed) return needed;
-  if (short && remaining.supplies > 0) return 'supplies';
-  if (game.presentPeople().some((p) => p.health > 0) && game.stock.med < 1 && remaining.medical > 0) return 'medical';
-  return null;
-}
-
-/** 누구를 보낼지: 아빠 → 엄마 → 동생 순(다치지 않은 사람 먼저), 주인공은 혼자 남았을 때만 */
+/** 누구를 보낼지: 아빠 → 엄마 → 동생 순(다치지 않은 사람 먼저). 주인공은 보내지 않는다. */
 export function expeditionMember(game) {
-  const order = ['dad', 'mom', 'sis', 'me'];
-  const allowed = (id) => !(id === 'me' && game.presentPeople().length > 1) && !game.expeditionReason(id);
+  const order = ['dad', 'mom', 'sis'];
+  const allowed = (id) => !game.expeditionReason(id);
   return order.find((id) => allowed(id) && game.person(id).health === 0) ?? order.find(allowed) ?? null;
 }
 
-export function expeditionPlan(game, target) {
+/** 보낼 수 있으면 늘 한 명을 내보낸다(무엇을 가져올지는 고를 수 없다). */
+export function expeditionPlan(game) {
   if (game.expeditionReason()) return null;
-  const targetId = expeditionTarget(game, target);
-  if (!targetId) return null;
   const memberId = expeditionMember(game);
   if (!memberId) return null;
-  return { memberId, targetId, withWeapon: game.stock.weapon > 0 };
+  return { memberId, withWeapon: game.stock.weapon > 0 };
 }
 
 // ── 집 ───────────────────────────────────────
 
-/** 식량·물 배급 계획: 경로용으로 남길 몫은 빼고, 목마르거나 배고픈 사람부터. { id: { food, water } } */
+/** 식량·물 배급 계획: 경로용으로 남길 몫은 빼고, 목마르거나 배고픈 사람에게만. { id: { food, water } } */
 export function desiredRations(game, target) {
   const reserve = reserveFor(game, target);
   const present = game.presentPeople();
@@ -139,7 +127,7 @@ export function desiredRations(game, target) {
   let water = game.stock.water - reserve.water;
   for (const p of [...present].sort((a, b) => b.thirst - a.thirst)) {
     if (water <= 0) break;
-    if (p.thirst >= 1 || water >= present.length * 3) {
+    if (p.thirst >= THIRST_NOTICE) {
       plan[p.id].water = true;
       water -= 1;
     }
@@ -147,7 +135,7 @@ export function desiredRations(game, target) {
   let food = game.stock.food - reserve.food;
   for (const p of [...present].sort((a, b) => b.hunger - a.hunger)) {
     if (food <= 0) break;
-    if (p.hunger >= 2 || food >= present.length * 3) {
+    if (p.hunger >= HUNGER_NOTICE) {
       plan[p.id].food = true;
       food -= 1;
     }
@@ -198,9 +186,11 @@ export function playGame(game, { target = 'all', bring = ['dad', 'mom', 'sis'], 
   playScramble(game, legs ?? scrambleLegs(target, bring));
   while (game.phase === 'home' && game.day <= maxDays) {
     onDay?.(game);
-    if (game.event && !game.event.resolved) game.chooseOption(chooseOption(game, target));
+    for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
+      game.chooseOption(chooseOption(game, target));
+    }
     if (game.phase !== 'home') break;
-    const plan = expeditionPlan(game, target);
+    const plan = expeditionPlan(game);
     if (plan) game.sendExpedition(plan);
     treat(game, target);
     setRations(game, target);

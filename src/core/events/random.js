@@ -2,16 +2,20 @@
 import { formatResources, RESOURCES } from '../items.js';
 import { healthLabel } from '../people.js';
 import { josa } from '../text.js';
+import { HUNGER_NOTICE } from '../constants.js';
 import { allOf, needCapable, needStock } from './helpers.js';
 
+const hasDog = (game) => (game.flags.dog ? null : '보리가 없다');
+
 const TRADES = [
-  { give: { food: 2 }, get: { water: 3 } },
-  { give: { water: 2 }, get: { food: 3 } },
-  { give: { food: 3 }, get: { med: 1 } },
+  { give: { food: 1 }, get: { water: 2 } },
+  { give: { water: 1 }, get: { food: 2 } },
+  { give: { food: 2 }, get: { med: 1 } },
   { give: { water: 2 }, get: { battery: 1 } },
   { give: { food: 2 }, get: { flare: 1 } },
   { give: { med: 1 }, get: { fuel: 1 } },
-  { give: { food: 2, water: 1 }, get: { map: 1 } },
+  { give: { food: 1, water: 1 }, get: { map: 1 } },
+  { give: { battery: 1 }, get: { food: 2 } },
 ];
 
 const pname = (game, id) => game.person(id).name;
@@ -31,7 +35,7 @@ export const RANDOM_EVENTS = [
         label: '아빠가 문을 막아선다',
         check: needCapable('dad'),
         resolve(ctx) {
-          if (ctx.rng.chance(0.35)) {
+          if (ctx.danger(0.35)) {
             ctx.injure(ctx.person('dad'));
             return '아빠가 온몸으로 문을 버텨 좀비를 막아냈다. 하지만 팔을 물어뜯겨 다쳤다. (아빠: 부상)';
           }
@@ -44,7 +48,7 @@ export const RANDOM_EVENTS = [
         check: needStock('weapon'),
         resolve(ctx) {
           const lines = [];
-          if (ctx.rng.chance(0.3)) {
+          if (ctx.danger(0.3)) {
             ctx.injure(ctx.person('me'));
             lines.push('좀비를 쫓아냈지만 손을 물렸다. (나: 부상)');
           } else {
@@ -58,11 +62,24 @@ export const RANDOM_EVENTS = [
         },
       },
       {
+        id: 'dog',
+        tag: '보리',
+        label: '보리가 먼저 알아채고 으르렁거린다',
+        check: hasDog,
+        resolve(ctx) {
+          if (!ctx.danger(0.2)) {
+            return '보리가 미리 낌새를 채고 으르렁거린 덕에, 불을 끄고 가구로 문을 막을 시간이 있었다. 좀비들은 그냥 지나갔다.';
+          }
+          const food = ctx.take('food', 1);
+          return `보리가 짖는 소리에 좀비가 더 몰려들었다. 겨우 버텼지만 부엌 창이 깨져 식량이 엉망이 됐다. (식량 -${food})`;
+        },
+      },
+      {
         id: 'hide',
         label: '불을 끄고 숨죽인다',
         resolve(ctx) {
           const present = ctx.present();
-          if (!present.length || ctx.rng.chance(0.5)) return '숨소리조차 죽인 채 버텼다. 좀비들은 지나갔다.';
+          if (!present.length || !ctx.danger(0.5)) return '숨소리조차 죽인 채 버텼다. 좀비들은 지나갔다.';
           const victim = ctx.rng.pick(present);
           ctx.injure(victim);
           const food = ctx.take('food', 1);
@@ -83,10 +100,10 @@ export const RANDOM_EVENTS = [
       {
         id: 'give',
         label: '식량과 물을 조금 내준다',
-        cost: '식량 2 · 물 2',
+        cost: '식량 1 · 물 1',
         resolve(ctx) {
-          const food = ctx.take('food', 2);
-          const water = ctx.take('water', 2);
+          const food = ctx.take('food', 1);
+          const water = ctx.take('water', 1);
           return `물자를 문틈으로 내밀었다. 약탈자들은 비웃으며 사라졌다. (식량 -${food}, 물 -${water})`;
         },
       },
@@ -95,7 +112,7 @@ export const RANDOM_EVENTS = [
         label: '방망이를 들고 맞선다',
         check: needStock('weapon'),
         resolve(ctx) {
-          if (ctx.rng.chance(0.6)) return '방망이를 쥐고 버티자 약탈자들이 욕설을 내뱉으며 물러났다.';
+          if (!ctx.danger(0.4)) return '방망이를 쥐고 버티자 약탈자들이 욕설을 내뱉으며 물러났다.';
           ctx.injure(ctx.person('me'));
           const food = ctx.take('food', 1);
           return `몸싸움 끝에 쫓아냈지만 다쳤고 식량을 빼앗겼다. (나: 부상, 식량 -${food})`;
@@ -107,11 +124,22 @@ export const RANDOM_EVENTS = [
         label: '아빠가 나가서 상대한다',
         check: needCapable('dad'),
         resolve(ctx) {
-          if (ctx.rng.chance(0.3)) {
+          if (ctx.danger(0.3)) {
             ctx.injure(ctx.person('dad'));
             return '아빠가 약탈자들을 제압해 쫓아냈다. 그 과정에서 아빠가 다쳤다. (아빠: 부상)';
           }
           return '전직 경비원인 아빠가 문 앞을 가로막자 약탈자들은 슬금슬금 물러났다.';
+        },
+      },
+      {
+        id: 'dog',
+        tag: '보리',
+        label: '보리를 앞세운다',
+        check: hasDog,
+        resolve(ctx) {
+          if (!ctx.danger(0.25)) return '보리가 이를 드러내고 달려들자 약탈자들은 혼비백산 달아났다.';
+          const food = ctx.take('food', 1);
+          return `약탈자가 던진 고깃덩이에 보리가 한눈을 판 사이, 식량을 조금 빼앗겼다. (식량 -${food})`;
         },
       },
     ],
@@ -176,14 +204,14 @@ export const RANDOM_EVENTS = [
       {
         id: 'outside',
         label: '마당에 양동이를 내놓는다',
-        note: '물 +3 · 밖에 나가야 해서 위험하다',
+        note: '물 +2 · 밖에 나가야 해서 위험하다',
         resolve(ctx) {
-          ctx.give('water', 3);
-          if (ctx.rng.chance(0.25)) {
+          ctx.give('water', 2);
+          if (ctx.danger(0.25)) {
             ctx.injure(ctx.person('me'));
-            return '빗물을 모았지만 돌아오는 길에 좀비에게 할퀴었다. (물 +3, 나: 부상)';
+            return '빗물을 모았지만 돌아오는 길에 좀비에게 할퀴었다. (물 +2, 나: 부상)';
           }
-          return '빗소리에 발소리를 숨겨 양동이를 내놓았다. (물 +3)';
+          return '빗소리에 발소리를 숨겨 양동이를 내놓았다. (물 +2)';
         },
       },
       {
@@ -239,15 +267,15 @@ export const RANDOM_EVENTS = [
     weight: 1,
     minDay: 3,
     cooldown: 4,
-    when: (game) => game.stock.food >= 3,
+    when: (game) => game.stock.food >= 2,
     text: () => '창고에서 바스락 소리가 난다. 쥐 떼가 식량을 갉아먹고 있다!',
     options: [
       {
         id: 'discard',
         label: '갉아먹힌 식량을 버린다',
-        cost: '식량 2',
+        cost: '식량 1',
         resolve(ctx) {
-          const food = ctx.take('food', 2);
+          const food = ctx.take('food', 1);
           return `쥐가 손댄 식량을 아깝지만 버렸다. (식량 -${food})`;
         },
       },
@@ -257,7 +285,7 @@ export const RANDOM_EVENTS = [
         note: '누군가 탈이 날 수 있다',
         resolve(ctx) {
           const present = ctx.present();
-          if (present.length && ctx.rng.chance(0.5)) {
+          if (present.length && ctx.danger(0.5)) {
             const victim = ctx.rng.pick(present);
             ctx.injure(victim);
             return `${josa(victim.name, '이/가')} 상한 음식을 먹고 심한 배탈로 앓아누웠다. (${victim.name}: ${healthLabel(victim.health).text})`;
@@ -333,9 +361,9 @@ export const RANDOM_EVENTS = [
     weight: 2,
     minDay: 3,
     cooldown: 3,
-    when: (game) => game.stock.food >= 1 && game.presentPeople().some((p) => !p.isPlayer && p.hunger >= 2),
+    when: (game) => game.stock.food >= 1 && game.presentPeople().some((p) => !p.isPlayer && p.hunger >= HUNGER_NOTICE),
     setup(game) {
-      const hungry = game.presentPeople().filter((p) => !p.isPlayer && p.hunger >= 2);
+      const hungry = game.presentPeople().filter((p) => !p.isPlayer && p.hunger >= HUNGER_NOTICE);
       hungry.sort((a, b) => b.hunger - a.hunger);
       return { member: hungry[0].id };
     },
