@@ -147,3 +147,16 @@ test('사건을 해결하기 전에는 하루를 마치거나 탐사를 보낼 �
   }
   assert.fail('사건이 있는 날을 찾지 못했다');
 });
+
+test('지난밤 요약에는 배고프거나 목마른데 못 받은 사람만 나온다', () => {
+  const game = homeGame({ bring: ['dad'], stock: { food: 0, water: 0 } });
+  game.director.pick = () => null;
+  game.endDay();
+  assert.ok(!game.nightReport.some((line) => /못함/.test(line)), '아직 아무도 배고프거나 목마르지 않다');
+  game.endDay();
+  game.endDay(); // 사흘째 밤: 목마른데 물이 없다
+  assert.ok(game.nightReport.some((line) => /목마른데 물을 마시지 못함: 나, 아빠/.test(line)), game.nightReport.join(' / '));
+  assert.ok(!game.nightReport.some((line) => /배고픈데/.test(line)), '배고픔은 하루 더 지나야 온다');
+  game.endDay();
+  assert.ok(game.nightReport.some((line) => /배고픈데 먹지 못함: 나, 아빠/.test(line)));
+});

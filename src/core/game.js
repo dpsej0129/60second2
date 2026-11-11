@@ -581,6 +581,9 @@ export class Game {
     if (this.canEndDay()) return false;
     const report = [];
     const present = this.presentPeople();
+    // 배고프거나 목마른데도 배급을 받지 못한 사람(밤사이 요약에 적는다)
+    const unfed = present.filter((p) => needsFood(p) && !this.rations[p.id]?.food);
+    const unwatered = present.filter((p) => needsWater(p) && !this.rations[p.id]?.water);
     let usedFood = 0;
     let usedWater = 0;
     for (const p of present) {
@@ -601,10 +604,8 @@ export class Game {
       }
     }
     report.push(`${present.length}명이 하루를 보냈다. 소비: 식량 ${usedFood}, 물 ${usedWater}`);
-    const unfed = present.filter((p) => !(this.rations[p.id]?.food));
-    const unwatered = present.filter((p) => !(this.rations[p.id]?.water));
-    if (unwatered.length) report.push(`물을 마시지 못함: ${unwatered.map((p) => p.name).join(', ')}`);
-    if (unfed.length) report.push(`굶음: ${unfed.map((p) => p.name).join(', ')}`);
+    if (unwatered.length) report.push(`목마른데 물을 마시지 못함: ${unwatered.map((p) => p.name).join(', ')}`);
+    if (unfed.length) report.push(`배고픈데 먹지 못함: ${unfed.map((p) => p.name).join(', ')}`);
 
     for (const p of present) {
       if (p.health <= 0) continue;
