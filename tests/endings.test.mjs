@@ -44,7 +44,7 @@ test('남쪽 안전지대: 한 사람마다 통조림 1캔·물 1병을 챙겨�
   assert.deepEqual([g2.stock.food, g2.stock.water], [0, 0], '배낭에 다 나눠 담았다');
   const lines = epilogue(g2);
   assert.match(lines.find((l) => l.id === 'dad').text, /피난 행렬의 맨 앞/);
-  assert.match(lines.find((l) => l.id === 'mom').text, /60초 안에 데려오지 못했다/);
+  assert.match(lines.find((l) => l.id === 'mom').text, /80초 안에 데려오지 못했다/);
 });
 
 test('떠돌이 상인 캐러밴: 쓸모를 보여 주고(동생·공구 상자·연료통), 자리값 건전지 2개와 물 1병을 내야 한다', () => {
@@ -200,7 +200,7 @@ test('후일담: 먼저 떠나보낸 식구는 사연과 함께 남는다', () =
     lines.map((l) => [l.name, l.text]),
     [
       ['아빠', '피난민 캠프에서 경비대에 자원했다.'],
-      ['엄마', '60초 안에 데려오지 못했다.'],
+      ['엄마', '80초 안에 데려오지 못했다.'],
       ['동생', '굶주림으로 세상을 떠났다.'],
     ],
   );

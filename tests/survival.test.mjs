@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { HUNGER_DEATH, HUNGER_NOTICE, THIRST_DEATH, THIRST_NOTICE } from '../src/core/constants.js';
 import { homeGame, passDays, resolveAnyEvent } from './helpers/setup.mjs';
 
-test('60초 동안 데려온 가족만 집에 있고, 나머지는 남겨진다', () => {
+test('80초 동안 데려온 가족만 집에 있고, 나머지는 남겨진다', () => {
   const none = homeGame({ bring: [] });
   assert.equal(none.phase, 'home');
   assert.deepEqual(

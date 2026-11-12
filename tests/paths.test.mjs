@@ -9,7 +9,7 @@ import { chooseOption, playGame, talkTarget, treat } from './helpers/strategy.mj
 const option = (view, id) => view.options.find((o) => o.id === id);
 
 for (const target of ['rescue', 'group', 'car', 'safezone', 'caravan', 'train']) {
-  test(`승리 경로 「${target}」: 60초 탐색 → 사건 → 반복 탐사 → 결말까지 실제로 도달한다`, () => {
+  test(`승리 경로 「${target}」: 80초 탐색 → 사건 → 반복 탐사 → 결말까지 실제로 도달한다`, () => {
     // 탐사에서 가족을 잃는 등 운이 나쁘면 질 수도 있다. 그래도 대부분은 그 경로로 이긴다.
     let wins = 0;
     for (const seed of [1, 2, 3, 4, 5]) {

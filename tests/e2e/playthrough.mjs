@@ -2,7 +2,7 @@
 //   npm run test:e2e
 // Playwright(Chromium)가 설치되어 있어야 한다. 없으면 건너뛴다.
 //
-// 시작 화면에서 난이도를 고르고, 60초 탐색은 키보드 이벤트로, 집 화면은 버튼·라디오·체크박스 클릭으로만 조작한다.
+// 시작 화면에서 난이도를 고르고, 80초 탐색은 키보드 이벤트로, 집 화면은 버튼·라디오·체크박스 클릭으로만 조작한다.
 // 무엇을 고를지는 tests/helpers/strategy.mjs 가 정하고(페이지 안에서 불러 씀),
 // 실제 입력은 화면을 통해 넣는다.
 import assert from 'node:assert/strict';
@@ -25,7 +25,7 @@ try {
 
 const log = (...args) => console.log(...args);
 
-/** 페이지 안에서 봇을 돌려 키보드 이벤트로 60초 탐색을 플레이한다. */
+/** 페이지 안에서 봇을 돌려 키보드 이벤트로 80초 탐색을 플레이한다. */
 async function driveScramble(page, target, bring) {
   return page.evaluate(
     async ({ target, bring }) => {
@@ -153,10 +153,10 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
   const counted = await page.evaluate(() => ({ food: window.game.stock.food, water: window.game.stock.water }));
   assert.equal(counted.food, 4 * scramble.items.filter((id) => id === 'canned').length, '통조림 1캔 = 4끼');
   assert.equal(counted.water, 4 * scramble.items.filter((id) => id === 'water').length, '생수 1병 = 4번');
-  // 일지 첫 쪽: 60초 동안 있었던 일
+  // 일지 첫 쪽: 80초 동안 있었던 일
   assert.equal(await text(page, '[data-ref="diary"] .page-day'), '1일차');
   checks.firstPage = await text(page, '[data-ref="diary"] [data-part="recap"]');
-  assert.match(checks.firstPage, /60초/);
+  assert.match(checks.firstPage, /80초/);
   const homeHtml = await page.content();
   assert.ok(!homeHtml.includes('마트에 남은 물자'), '마트 남은 물자는 보이지 않는다');
   assert.ok(!/실종 \d+%|부상 \d+%/.test(homeHtml), '탐사 확률은 보이지 않는다');
@@ -352,7 +352,7 @@ async function main() {
     }));
     assert.deepEqual(fresh, { ...old, phase: 'ready', day: 0, items: 0 });
 
-    // 4) 60초 동안 마트에 가만히 있으면 시간 초과 패배 → '새 게임'은 난이도를 고르는 시작 화면으로
+    // 4) 80초 동안 마트에 가만히 있으면 시간 초과 패배 → '새 게임'은 난이도를 고르는 시작 화면으로
     await page.goto(`${baseUrl}/?seed=5&debug=1&timescale=6&zombies=off`);
     await page.click('button[type=submit]');
     await waitScreen(page, 'run');

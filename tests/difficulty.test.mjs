@@ -16,7 +16,7 @@ test('난이도는 이지·하드·아포칼립스 세 가지이고, 기본은 �
   assert.equal(new Game({ seed: 1, difficulty: '없는 난이도' }).difficulty.id, 'easy');
 });
 
-test('난이도가 오를수록 60초 동안 좀비가 많고 빠르고 멀리 본다', () => {
+test('난이도가 오를수록 80초 동안 좀비가 많고 빠르고 멀리 본다', () => {
   const runs = DIFFICULTY_ORDER.map((difficulty) => {
     const game = new Game({ seed: 9, difficulty });
     game.startFirstRun();

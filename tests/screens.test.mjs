@@ -51,7 +51,7 @@ test('일지: 아침마다 지난 하루를 정리한 쪽이 생기고, 지난 �
   game.director.randomEvents = [];
   let html = renderHome(game);
   assert.match(html, /<h2 class="page-day">1일차<\/h2>/);
-  assert.match(html, /data-part="recap"[\s\S]*60초\./, '첫 쪽에는 60초 동안 있었던 일이 적힌다');
+  assert.match(html, /data-part="recap"[\s\S]*80초\./, '첫 쪽에는 80초 동안 있었던 일이 적힌다');
   assert.match(html, /엄마를 끝내 데려오지 못했다/);
   assert.match(html, /선반에 남은 것: 통조림 3캔, 물 3병/);
   stageEvent(game, 'birthday', { target: 'dad' });
@@ -148,7 +148,7 @@ test('결말 화면: 후일담과 결말 도감(본 결말만 제목이 보인�
   assert.match(html, /새로운 결말을 발견했다/);
   assert.match(html, /그 뒤의 이야기/);
   assert.match(html, /data-person="dad"><b>아빠<\/b> 하얀 옷을 입은 뒤로/);
-  assert.match(html, /data-person="mom"><b>엄마<\/b> 60초 안에 데려오지 못했다/);
+  assert.match(html, /data-person="mom"><b>엄마<\/b> 80초 안에 데려오지 못했다/);
   assert.match(html, /결말 도감 <span class="count">2 \/ 16<\/span>/);
   assert.equal((html.match(/codex-cell unseen/g) ?? []).length, 14);
   assert.doesNotMatch(renderEnding(game, { discovered: ['cult'] }), /새로운 결말/);
