@@ -125,7 +125,7 @@ export function reserveFor(game, target) {
 // ── 60초 탐색 ─────────────────────────────────
 
 /** 60초 계획: 첫 마트 왕복(경로에 필요한 물건) → 가족 → 시간이 되는 만큼 식량·물 왕복 → 집으로 들어가기 */
-export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
+export function scrambleLegs(target, bring = ['dad', 'mom', 'sis'], foodTrips = 4, familyFirst = false) {
   let first = ['water', 'water', 'canned', 'canned'];
   if (target === 'rescue' || target === 'all') first = ['radio', 'battery', 'battery', 'flare'];
   if (target === 'car') first = ['toolkit', 'roadmap', 'canned'];
@@ -133,12 +133,13 @@ export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
   if (target === 'safezone') first = ['roadmap', 'water', 'canned', 'canned'];
   if (target === 'caravan') first = ['toolkit', 'battery', 'battery'];
   if (target === 'train') first = ['medkit', 'radio', 'battery'];
-  const legs = [first];
+  const legs = familyFirst ? [] : [first];
   if (bring.includes('dad')) legs.push(['dad']);
   const pair = ['mom', 'sis'].filter((id) => bring.includes(id));
   if (pair.length) legs.push(pair);
+  if (familyFirst) legs.push(first);
   if (target === 'car') legs.push(['fuel', 'water', 'water']);
-  for (let i = 0; i < 4; i++) legs.push(['water', 'water', 'canned', 'canned']);
+  for (let i = 0; i < foodTrips; i++) legs.push(['water', 'water', 'canned', 'canned']);
   return legs;
 }
 
@@ -299,7 +300,11 @@ export function treat(game, target) {
  */
 export function playGame(game, { target = 'all', bring = ['dad', 'mom', 'sis'], maxDays = 100, onDay = null, legs = null } = {}) {
   game.startFirstRun();
-  playScramble(game, legs ?? scrambleLegs(target, bring));
+  // 좀비가 많은 난이도에서는 욕심내지 않고 식량·물 왕복을 줄인다
+  // 좀비가 많은 난이도에서는 식량·물 왕복을 욕심내지 않는다
+  const cautious = game.zombies && game.difficulty.id !== 'easy';
+  const foodTrips = cautious ? { hard: 2, apocalypse: 1 }[game.difficulty.id] ?? 2 : 4;
+  playScramble(game, legs ?? scrambleLegs(target, bring, foodTrips));
   while (game.phase === 'home' && game.day <= maxDays) {
     onDay?.(game);
     for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
