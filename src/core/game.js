@@ -6,6 +6,7 @@ import {
   HUNGER_DEATH,
   HUNGER_WEAK,
   MOOD_BROKEN,
+  MOOD_DEPRESSED,
   MOOD_LOW,
   THIRST_DEATH,
   THIRST_WEAK,
@@ -17,6 +18,7 @@ import { chainMissedNote } from './events/chains.js';
 import { EventDirector } from './events/director.js';
 import { expeditionRisk, rollItems, rollLoot } from './expedition.js';
 import { Inventory, isPerson } from './inventory.js';
+import { itemSummary, mealLines, morningStatus, nameList } from './journal.js';
 import { emptyStock, formatResources, ITEMS } from './items.js';
 import {
   FAMILY_DEFS,
@@ -78,6 +80,8 @@ export class Game {
     this.talkedToday = false;
     this.nightReport = [];
     this.log = [];
+    this.journal = []; // 하루 한 쪽씩 쓰는 일지
+    this.journalCursor = 0;
     this.ending = null;
     this.pendingWin = null;
     this.listeners = new Set();
@@ -106,8 +110,21 @@ export class Game {
     return this.people.filter(isHome);
   }
 
-  addLog(text, tone = 'info') {
-    this.log.push({ day: this.day, text, tone });
+  /** kind: scramble | event | event-start | action | morning | night | death (일지에 어떻게 적을지) */
+  addLog(text, tone = 'info', kind = 'action', extra = {}) {
+    this.log.push({ day: this.day, text, tone, kind, ...extra });
+  }
+
+  /** 일지의 새 쪽: 지난 쪽 이후에 일어난 일 + 오늘 아침 모습. 아침마다 한 번 쓴다. */
+  writePage() {
+    const entries = this.pendingEntries();
+    this.journalCursor = this.log.length;
+    this.journal.push({ day: this.day, entries, status: morningStatus(this) });
+  }
+
+  /** 아직 일지에 옮겨 적지 않은 일(오늘 낮에 일어난 일, 또는 마지막 날의 일). */
+  pendingEntries() {
+    return this.log.slice(this.journalCursor).filter((e) => e.kind !== 'event-start');
   }
 
   // ── 60초 탐색 ────────────────────────────────
@@ -163,15 +180,17 @@ export class Game {
     }
     this.inventory.takeAll();
     this.run = null;
-    const names = items.map((id) => ITEMS[id].name);
-    this.addLog(
-      `${run.endedBy === 'enter' ? `남은 ${run.timeLeft.toFixed(1)}초를 두고 집에 들어가 문을 잠갔다.` : '60초가 끝날 때 무사히 집 문간에 있었다.'} 들여놓은 물품: ${names.length ? names.join(', ') : '없음'}`,
-      'good',
-    );
+    const summary = itemSummary(items);
+    const opening =
+      run.endedBy === 'enter'
+        ? `60초. ${Math.max(1, Math.round(run.timeLeft))}초를 남기고 문을 걸어 잠갔다.`
+        : '60초가 끝나는 순간, 간신히 집 문간에 닿았다.';
+    this.addLog(`${opening} ${summary ? `마트에서 들고 온 것: ${summary}.` : '마트에서는 아무것도 들고 오지 못했다.'}`, 'good', 'scramble');
     const brought = this.people.filter((p) => family.includes(p.id)).map((p) => p.name);
     const left = this.people.filter((p) => p.status === 'left').map((p) => p.name);
-    if (brought.length) this.addLog(`함께 집에 들어온 가족: ${brought.join(', ')}`, 'good');
-    if (left.length) this.addLog(`데려오지 못한 가족: ${left.join(', ')}`, 'warn');
+    if (brought.length === FAMILY_DEFS.length) this.addLog('가족 모두 무사히 집 안으로 데려왔다.', 'good', 'scramble');
+    else if (brought.length) this.addLog(`${josa(nameList(brought), '을/를')} 데리고 들어왔다.`, 'good', 'scramble');
+    if (left.length) this.addLog(`${josa(nameList(left), '을/를')} 끝내 데려오지 못했다. 어딘가에서 무사하기를 빈다.`, 'warn', 'scramble');
     this.phase = 'home';
     this.day = 1;
     this.startDay();
@@ -214,7 +233,7 @@ export class Game {
     };
     this.expeditions += 1;
     p.status = 'away';
-    this.addLog(`${josa(p.name, '이/가')} 물자를 찾아 밖으로 탐사를 떠났다${weapon ? ' (야구 방망이를 챙김)' : ''}.`, 'event');
+    this.addLog(`${josa(p.name, '이/가')} ${weapon ? '야구 방망이를 챙겨 들고 ' : ''}물자를 찾아 밖으로 나갔다.`, 'event', 'action');
     this.syncRations();
     this.emit();
     return true;
@@ -265,7 +284,7 @@ export class Game {
       report.outcome = 'lost';
       report.text = `${josa(p.name, '이/가')} 탐사에서 돌아오지 않았다.`;
       this.expeditionReport = report;
-      this.addLog(report.text, 'bad');
+      this.addLog(report.text, 'bad', 'morning');
       if (p.isPlayer) this.setEnding('lost');
       return;
     }
@@ -285,14 +304,20 @@ export class Game {
     const injured = rng.chance(exp.risk.injury);
     if (injured) p.health = Math.min(HEALTH_DEATH - 1, p.health + 1);
     report.outcome = injured ? 'injured' : 'returned';
-    const names = loot.items.map((id) => ITEMS[id].name);
+    const carried = itemSummary(loot.items);
     const extraText = formatResources(loot.extra);
-    const carried = names.length ? names.join(', ') : '쓸 만한 것을 찾지 못했다';
-    report.text = `${josa(p.name, '이/가')} ${days}일 만에 돌아왔다. 가져온 것: ${carried}${extraText ? ` · 길에서 주운 것: ${extraText}` : ''}${
-      injured ? ` · ${josa(p.name, '은/는')} 다쳐서 돌아왔다 (${healthLabel(p.health).text})` : ''
-    }`;
+    const back = p.isPlayer ? `${days}일 만에 집으로 돌아왔다.` : `${josa(p.name, '이/가')} ${days}일 만에 돌아왔다!`;
+    const bag = carried ? `배낭에서 ${carried}가 나왔다.` : '배낭은 거의 비어 있었다. 쓸 만한 것을 찾지 못했다고 한다.';
+    report.text = [
+      back,
+      bag,
+      extraText ? `길에서 ${extraText}도 주워 왔다.` : '',
+      injured ? `${p.isPlayer ? '나는' : josa(p.name, '은/는')} 어딘가를 다쳐 절뚝이며 들어왔다.` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
     this.expeditionReport = report;
-    this.addLog(report.text, injured ? 'warn' : 'good');
+    this.addLog(report.text, injured ? 'warn' : 'good', 'morning');
   }
 
   // ── 하루 ─────────────────────────────────────
@@ -311,13 +336,14 @@ export class Game {
     this.event = inst ? { ...inst, resolved: false, outcome: null, choice: null } : null;
     this.eventQueue = [];
     this.resolvedToday = [];
-    if (inst) this.addLog(`사건 발생: ${EVENT_DEFS[inst.defId].title}`, 'event');
+    if (inst) this.addLog(`사건 발생: ${EVENT_DEFS[inst.defId].title}`, 'event', 'event-start');
     if (inst?.chainId) {
       const bonus = this.director.pickBonus(this.day, this);
       if (bonus) this.eventQueue.push({ ...bonus, resolved: false, outcome: null, choice: null });
     }
     this.rationsTouched = false;
     this.resetRations();
+    this.writePage();
   }
 
   /** 탈출 경로가 모두 닫혀 이길 길이 없어지면, 며칠 뒤 하나가 다시 열린다. */
@@ -434,7 +460,7 @@ export class Game {
     p.health -= 1;
     p.untreated = 0;
     p.treatedToday = true;
-    this.addLog(`${p.name}에게 구급약을 썼다. (${healthLabel(p.health).text})`, 'good');
+    this.addLog(`${p.isPlayer ? '내' : `${p.name}의`} 상처를 구급약으로 치료했다.`, 'good', 'action');
     this.emit();
     return true;
   }
@@ -457,7 +483,7 @@ export class Game {
     p.treatedToday = true;
     p.untreated = 0;
     this.momCaredToday = true;
-    this.addLog(`엄마가 ${josa(p.name, '을/를')} 간호했다. 오늘 밤 부상이 악화되지 않는다.`, 'good');
+    this.addLog(`엄마가 ${josa(p.name, '을/를')} 정성껏 간호했다.`, 'good', 'action');
     this.emit();
     return true;
   }
@@ -478,7 +504,7 @@ export class Game {
     p.mood -= 1;
     p.talkedToday = true;
     this.talkedToday = true;
-    this.addLog(`${josa(p.name, '과/와')} 오래 이야기를 나눴다. 조금은 마음이 풀린 얼굴이다.`, 'good');
+    this.addLog(`${josa(p.name, '과/와')} 오래 이야기를 나눴다. 조금은 마음이 풀린 얼굴이다.`, 'good', 'action');
     this.emit();
     return true;
   }
@@ -543,7 +569,7 @@ export class Game {
       // 선택지가 일정을 정하지 않았다면 다음 날 다시 묻는다(경로가 멈추지 않게).
       this.director.schedule(chain, this.day + 1);
     }
-    this.addLog(text, 'event');
+    this.addLog(text, 'event', 'event', { title: def.title });
     this.checkDeaths();
     if (!this.ending && this.pendingWin) {
       const { endingId, extra } = this.pendingWin;
@@ -556,7 +582,7 @@ export class Game {
         // 오늘 이어서 일어나는 사건으로 넘어간다
         this.resolvedToday.push(this.eventView());
         this.event = this.eventQueue.shift();
-        this.addLog(`사건 발생: ${EVENT_DEFS[this.event.defId].title}`, 'event');
+        this.addLog(`사건 발생: ${EVENT_DEFS[this.event.defId].title}`, 'event', 'event-start');
       }
     }
     this.emit();
@@ -648,9 +674,17 @@ export class Game {
         p.thirst += 1;
       }
     }
-    report.push(`${present.length}명이 하루를 보냈다. 소비: 식량 ${usedFood}, 물 ${usedWater}`);
-    if (unwatered.length) report.push(`목마른데 물을 마시지 못함: ${unwatered.map((p) => p.name).join(', ')}`);
-    if (unfed.length) report.push(`배고픈데 먹지 못함: ${unfed.map((p) => p.name).join(', ')}`);
+    report.push(
+      ...mealLines({
+        present,
+        ate: present.filter((p) => p.hunger === 0).map((p) => p.name),
+        drank: present.filter((p) => p.thirst === 0).map((p) => p.name),
+        usedFood,
+        usedWater,
+        unfed: unfed.map((p) => p.name),
+        unwatered: unwatered.map((p) => p.name),
+      }),
+    );
 
     for (const p of present) {
       if (p.health <= 0) continue;
@@ -662,14 +696,14 @@ export class Game {
       if (p.untreated >= this.difficulty.worsenDays) {
         p.health = Math.min(HEALTH_DEATH, p.health + 1);
         p.untreated = 0;
-        report.push(`치료받지 못한 ${p.name}의 부상이 악화됐다. (${healthLabel(p.health).text})`);
+        report.push({ text: `치료받지 못한 ${p.isPlayer ? '내' : `${p.name}의`} 상처가 덧났다.`, tone: 'bad' });
       }
     }
 
     this.updateMoods(present, report);
     this.checkDeaths(report);
-    for (const line of report) this.addLog(line, 'night');
-    this.nightReport = report;
+    for (const line of report) this.addLog(line.text, line.tone || 'night', 'night');
+    this.nightReport = report.map((line) => line.text);
     if (this.ending) {
       this.emit();
       return true;
@@ -706,11 +740,14 @@ export class Game {
           3: `${josa(p.name, '은/는')} 하루 종일 구석에 웅크린 채 아무것도 하려 하지 않는다.`,
           4: `${josa(p.name, '이/가')} 밤새 누군가와 속삭이듯 혼잣말을 했다. 무서운 목소리가 들린다고 한다.`,
         };
-        report.push(lines[p.mood]);
+        report.push({ text: lines[p.mood], tone: p.mood >= MOOD_DEPRESSED ? 'bad' : 'warn' });
       }
       if (p.mood >= MOOD_BROKEN && !p.talkedToday && rng.chance(0.25 * this.difficulty.harm)) {
         p.status = 'lost';
-        report.push(`새벽에 문이 열리는 소리가 났다. ${josa(p.name, '이/가')} 목소리를 따라 밖으로 나가 버렸다. 다시 돌아오지 않았다.`);
+        report.push({
+          text: `새벽에 문이 열리는 소리가 났다. ${josa(p.name, '이/가')} 목소리를 따라 밖으로 나가 버렸다. 다시 돌아오지 않았다.`,
+          tone: 'bad',
+        });
       }
     }
   }
@@ -726,8 +763,8 @@ export class Game {
       p.status = 'dead';
       p.cause = cause;
       const line = `${josa(p.name, '이/가')} ${josa(cause, '으로/로')} 숨을 거뒀다.`;
-      if (report) report.push(line);
-      else this.addLog(line, 'bad');
+      if (report) report.push({ text: line, tone: 'bad' });
+      else this.addLog(line, 'bad', 'death');
       if (p.isPlayer) playerCause = cause;
     }
     // 같은 밤에 여럿이 숨지면 모두 기록한 뒤에 결말을 정한다(생존자 명단이 정확하도록).

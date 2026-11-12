@@ -2,6 +2,7 @@
 // (플레이어를 순간 이동시키는 것만 다르고, 줍기·가방·집에 들여놓기는 실제 규칙 그대로다.)
 import { SIM_STEP } from '../../src/core/constants.js';
 import { Game } from '../../src/core/game.js';
+import { morningStatus } from '../../src/core/journal.js';
 import { HOME_ZONE } from '../../src/core/world.js';
 
 export const HOME_SPOT = { x: HOME_ZONE.x + HOME_ZONE.w / 2, y: HOME_ZONE.y + HOME_ZONE.h / 2 };
@@ -48,6 +49,7 @@ export function homeGame({ seed = 1, bring = ['dad', 'mom', 'sis'], stock = {}, 
   enterHome(game);
   Object.assign(game.stock, stock);
   game.syncRations();
+  game.journal.at(-1).status = morningStatus(game); // 재고를 맞춘 뒤 첫 쪽의 아침 모습도 다시 적는다
   return game;
 }
 

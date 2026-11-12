@@ -148,15 +148,27 @@ test('사건을 해결하기 전에는 하루를 마치거나 탐사를 보낼 �
   assert.fail('사건이 있는 날을 찾지 못했다');
 });
 
-test('지난밤 요약에는 배고프거나 목마른데 못 받은 사람만 나온다', () => {
+test('일지의 지난밤 기록에는 누가 얼마나 나눠 먹었는지, 배고프거나 목마른데 못 받은 사람이 적힌다', () => {
   const game = homeGame({ bring: ['dad'], stock: { food: 0, water: 0 } });
   game.director.pick = () => null;
   game.endDay();
-  assert.ok(!game.nightReport.some((line) => /못함/.test(line)), '아직 아무도 배고프거나 목마르지 않다');
+  assert.ok(!game.nightReport.some((line) => /못했다/.test(line)), '아직 아무도 배고프거나 목마르지 않다');
+  assert.match(game.nightReport[0], /아껴 두었다/);
   game.endDay();
   game.endDay(); // 사흘째 밤: 목마른데 물이 없다
-  assert.ok(game.nightReport.some((line) => /목마른데 물을 마시지 못함: 나, 아빠/.test(line)), game.nightReport.join(' / '));
-  assert.ok(!game.nightReport.some((line) => /배고픈데/.test(line)), '배고픔은 하루 더 지나야 온다');
+  assert.ok(game.nightReport.includes('나와 아빠는 목이 말랐지만 물을 마시지 못했다.'), game.nightReport.join(' / '));
+  assert.ok(!game.nightReport.some((line) => /배가 고팠지만/.test(line)), '배고픔은 하루 더 지나야 온다');
   game.endDay();
-  assert.ok(game.nightReport.some((line) => /배고픈데 먹지 못함: 나, 아빠/.test(line)));
+  assert.ok(game.nightReport.includes('나와 아빠는 배가 고팠지만 아무것도 먹지 못했다.'));
+
+  // 물이 생기면 한 사람 한 끼 ¼병씩 나눠 마신다
+  game.stock.water = 4;
+  game.syncRations();
+  game.setAllRations(true);
+  game.endDay();
+  assert.ok(game.nightReport.includes('저녁에 다 같이 물 ½병을 나눠 마셨다.'), game.nightReport.join(' / '));
+  assert.equal(game.stock.water, 2);
+  const page = game.journal.at(-1);
+  assert.equal(page.day, game.day, '아침마다 새 쪽을 쓴다');
+  assert.ok(page.entries.some((e) => e.kind === 'night' && /½병을 나눠 마셨다/.test(e.text)), '어젯밤 일이 오늘 쪽에 옮겨 적힌다');
 });

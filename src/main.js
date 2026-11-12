@@ -27,7 +27,7 @@ class App {
     this.game = null;
     this.runView = null;
     this.unsubscribe = null;
-    this.ui = { expedition: { memberId: null, withWeapon: false } };
+    this.ui = { expedition: { memberId: null, withWeapon: false }, page: null };
     this.difficulty = OPTIONS.difficulty;
     root.addEventListener('click', (e) => this.onClick(e));
     root.addEventListener('change', (e) => this.onChange(e));
@@ -45,6 +45,7 @@ class App {
   newGame(seed) {
     this.teardown();
     this.ui.expedition = { memberId: null, withWeapon: false };
+    this.ui.page = null;
     this.game = new Game({
       seed: Number.isFinite(seed) && seed > 0 ? seed : randomSeed(),
       zombies: OPTIONS.zombies,
@@ -141,6 +142,16 @@ class App {
       case 'mom-care':
         game.momCare(person);
         break;
+      case 'talk':
+        game.talk(person);
+        break;
+      case 'page': {
+        // 일지 넘기기: 지난 쪽을 펼쳐 본다(빈 값이면 오늘 쪽)
+        this.ui.page = el.dataset.page ? Number(el.dataset.page) : null;
+        this.renderScreen();
+        this.root.querySelector('[data-ref="diary"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        break;
+      }
       case 'ration-all':
         game.setAllRations(true);
         break;
@@ -153,6 +164,7 @@ class App {
         break;
       }
       case 'end-day':
+        this.ui.page = null;
         game.endDay();
         window.scrollTo({ top: 0, behavior: 'smooth' });
         break;
