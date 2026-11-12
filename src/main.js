@@ -11,33 +11,38 @@ import { DEFAULT_DIFFICULTY, DIFFICULTIES } from './core/difficulty.js';
 import { Game } from './core/game.js';
 import { randomSeed } from './core/rng.js';
 import { RunView } from './ui/runView.js';
+import { earnedAchievements } from './core/achievements.js';
 import { renderEnding, renderHome, renderTitle } from './ui/screens.js';
 
-// 결말 도감: 본 결말 id 목록을 이 브라우저에만 저장한다(저장소를 못 쓰면 이번 방문 동안만 기억).
-const CODEX_KEY = 'mart60.endings';
-const codex = {
-  memory: new Set(),
-  load() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(CODEX_KEY) ?? '[]');
-      if (Array.isArray(saved)) for (const id of saved) this.memory.add(id);
-    } catch {
-      /* 저장소를 쓸 수 없는 환경 */
-    }
-    return [...this.memory];
-  },
-  /** 새로 본 결말이면 true */
-  add(id) {
-    const fresh = !this.load().includes(id);
-    this.memory.add(id);
-    try {
-      localStorage.setItem(CODEX_KEY, JSON.stringify([...this.memory]));
-    } catch {
-      /* 저장하지 못해도 게임은 계속된다 */
-    }
-    return fresh;
-  },
-};
+// 결말 도감·업적: 본 결말과 이룬 업적 id 목록을 이 브라우저에만 저장한다(저장소를 못 쓰면 이번 방문 동안만 기억).
+function savedSet(key) {
+  return {
+    memory: new Set(),
+    load() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(key) ?? '[]');
+        if (Array.isArray(saved)) for (const id of saved) this.memory.add(id);
+      } catch {
+        /* 저장소를 쓸 수 없는 환경 */
+      }
+      return [...this.memory];
+    },
+    /** 처음 기록하는 id 목록을 돌려준다 */
+    addAll(ids) {
+      const before = new Set(this.load());
+      const fresh = ids.filter((id) => !before.has(id));
+      for (const id of ids) this.memory.add(id);
+      try {
+        localStorage.setItem(key, JSON.stringify([...this.memory]));
+      } catch {
+        /* 저장하지 못해도 게임은 계속된다 */
+      }
+      return fresh;
+    },
+  };
+}
+const codex = savedSet('mart60.endings');
+const trophies = savedSet('mart60.achievements');
 
 const TITLE = `마트 탈출 ${RUN_SECONDS}초`;
 const params = new URLSearchParams(location.search);
@@ -66,7 +71,7 @@ class App {
   showTitle(seed = null) {
     this.teardown();
     this.game = null;
-    this.root.innerHTML = renderTitle({ seed, difficulty: this.difficulty, discovered: codex.load() });
+    this.root.innerHTML = renderTitle({ seed, difficulty: this.difficulty, discovered: codex.load(), achievements: trophies.load() });
     document.title = TITLE;
   }
 
@@ -120,11 +125,17 @@ class App {
     if (game.phase === 'home') this.root.innerHTML = renderHome(game, this.ui);
     else if (game.phase === 'ending') {
       if (this.recordedEnding !== game) {
-        // 결말은 게임마다 한 번만 도감에 적는다
+        // 결말과 업적은 게임마다 한 번만 기록한다
         this.recordedEnding = game;
-        this.newEnding = codex.add(game.ending.id);
+        this.newEnding = codex.addAll([game.ending.id]).length > 0;
+        this.freshAchievements = trophies.addAll(earnedAchievements(game, { discovered: codex.load() }));
       }
-      this.root.innerHTML = renderEnding(game, { discovered: codex.load(), isNew: this.newEnding });
+      this.root.innerHTML = renderEnding(game, {
+        discovered: codex.load(),
+        isNew: this.newEnding,
+        achievements: trophies.load(),
+        freshAchievements: this.freshAchievements,
+      });
     }
     document.title = game.phase === 'home' ? `${game.day}일차 · ${TITLE}` : TITLE;
   }

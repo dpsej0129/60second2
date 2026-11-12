@@ -1,6 +1,7 @@
 // 실시간 구간 밖의 화면들: 시작, 집 생존(하루 단위), 결말.
 import { EXPEDITION_DAYS, HUNGER_DEATH, RUN_SECONDS, THIRST_DEATH } from '../core/constants.js';
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_ORDER } from '../core/difficulty.js';
+import { ACHIEVEMENTS } from '../core/achievements.js';
 import { ENDING_ORDER, ENDINGS, epilogue } from '../core/endings.js';
 import { RESOURCES, portions } from '../core/items.js';
 import {
@@ -20,7 +21,7 @@ import { renderShelter } from './shelter.js';
 
 // ── 시작 화면 ────────────────────────────────────
 
-export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY, discovered = [] }) {
+export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY, discovered = [], achievements = [] }) {
   const levels = DIFFICULTY_ORDER.map((id) => {
     const d = DIFFICULTIES[id];
     return `<label class="level ${id} ${id === difficulty ? 'on' : ''}">
@@ -51,6 +52,7 @@ export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY, discovered 
       </form>
       <p class="muted small">조작: 이동 WASD·방향키(또는 화면을 누른 채 끌기) · 줍기 E/Space · 내려놓기 1~4</p>
       ${renderCodex(discovered)}
+      ${renderAchievements(achievements)}
     </section>`;
 }
 
@@ -345,7 +347,23 @@ export function renderCodex(discovered = []) {
     </section>`;
 }
 
-export function renderEnding(game, { discovered = [], isNew = false } = {}) {
+/** 업적: 이룬 것은 밝게, 아직인 것은 흐리게 */
+export function renderAchievements(unlocked = [], fresh = []) {
+  const got = new Set(unlocked);
+  const cells = ACHIEVEMENTS.map(
+    (a) => `<li class="ach ${got.has(a.id) ? 'got' : ''} ${fresh.includes(a.id) ? 'fresh' : ''}" data-achievement="${a.id}">
+        <span class="ach-icon" aria-hidden="true">${a.icon}</span>
+        <span><b>${esc(a.title)}</b><small>${esc(a.desc)}</small></span></li>`,
+  ).join('');
+  return `
+    <section class="achievements" data-ref="achievements">
+      <h3>업적 <span class="count">${ACHIEVEMENTS.filter((a) => got.has(a.id)).length} / ${ACHIEVEMENTS.length}</span></h3>
+      <ul class="ach-grid">${cells}</ul>
+    </section>`;
+}
+
+export function renderEnding(game, { discovered = [], isNew = false, achievements = [], freshAchievements = [] } = {}) {
+  const fresh = ACHIEVEMENTS.filter((a) => freshAchievements.includes(a.id));
   const e = game.ending;
   const last = game.pendingEntries().map(entryHtml).join('');
   const after = epilogue(game)
@@ -357,6 +375,7 @@ export function renderEnding(game, { discovered = [], isNew = false } = {}) {
       <p class="ending-icon" aria-hidden="true">${e.icon ?? ''}</p>
       <h1>${esc(e.title)}</h1>
       ${when(isNew, '<p class="new-ending" data-ref="new-ending">새로운 결말을 발견했다!</p>')}
+      ${when(fresh.length, () => `<div class="new-achievements" data-ref="new-achievements">${fresh.map((a) => `<span class="ach-badge">${a.icon} 업적 달성: <b>${esc(a.title)}</b></span>`).join('')}</div>`)}
       <p class="ending-text">${esc(e.text)}</p>
       ${when(after, () => `<section class="epilogue" data-ref="epilogue"><h3>그 뒤의 이야기</h3><ul>${after}</ul></section>`)}
       <dl class="stats">
@@ -372,5 +391,6 @@ export function renderEnding(game, { discovered = [], isNew = false } = {}) {
         <button type="button" class="btn big" data-action="same-seed">같은 시드로 다시 <small>${esc(game.difficulty.name)} · ${game.seed}</small></button>
       </div>
       ${renderCodex(discovered)}
+      ${renderAchievements(achievements, freshAchievements)}
     </section>`;
 }

@@ -56,6 +56,8 @@ export class Game {
     this.pendingMove = null; // 이사 준비 중이면 { map, martStock, family, … }
     this.pendingMovePlace = null;
     this.moves = 0;
+    this.stats = { talks: 0, maxStreak: 0 }; // 업적 판정용
+    this.firstRun = null; // 처음 80초의 결과
     this.nightEvents = true; // 밤사이 사건을 굴릴지(규칙을 떼어 검사할 때만 끈다)
     this.tripStreak = 0; // 쉬지 않고 이어 보낸 탐사 수
     this.restDays = 0; // 아무도 탐사를 나가 있지 않은 밤의 수(하룻밤마다 연속 탐사 피로가 하나 풀린다)
@@ -318,6 +320,7 @@ export class Game {
       this.emit();
       return;
     }
+    this.firstRun = this.lastRun;
     if (run.outcome !== 'home') {
       this.setEnding(run.outcome);
       this.emit();
@@ -395,6 +398,7 @@ export class Game {
     };
     this.expeditions += 1;
     this.tripStreak = this.nextTripStreak();
+    this.stats.maxStreak = Math.max(this.stats.maxStreak, this.tripStreak);
     this.restDays = 0;
     p.status = 'away';
     this.addLog(`${josa(p.name, '이/가')} ${weapon ? '야구 방망이를 챙겨 들고 ' : ''}물자를 찾아 밖으로 나갔다.`, 'event', 'action');
@@ -676,6 +680,7 @@ export class Game {
     p.mood -= 1;
     p.talkedToday = true;
     this.talkedToday = true;
+    this.stats.talks += 1;
     this.addLog(`${josa(p.name, '과/와')} 오래 이야기를 나눴다. 조금은 마음이 풀린 얼굴이다.`, 'good', 'action');
     this.emit();
     return true;

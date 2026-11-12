@@ -1545,6 +1545,88 @@ kbd {
   border-color: rgba(255, 107, 94, 0.5);
 }
 
+.achievements {
+  text-align: left;
+  margin-top: 22px;
+}
+
+.achievements h3 .count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ach-grid {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+
+.ach {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.ach b {
+  display: block;
+  font-size: 13px;
+}
+
+.ach small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ach.got {
+  opacity: 1;
+  color: var(--text);
+  border-style: solid;
+  border-color: rgba(255, 207, 74, 0.55);
+  background: var(--panel);
+}
+
+.ach.fresh {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.ach-icon {
+  font-size: 20px;
+  width: 26px;
+  text-align: center;
+  filter: grayscale(1);
+}
+
+.ach.got .ach-icon {
+  filter: none;
+}
+
+.new-achievements {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ach-badge {
+  background: #2b2614;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 2px 12px;
+  font-size: 13px;
+}
+
 .codex-icon {
   width: 22px;
   text-align: center;
