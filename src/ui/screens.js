@@ -1,6 +1,7 @@
 // 실시간 구간 밖의 화면들: 시작, 집 생존(하루 단위), 결말.
 import { EXPEDITION_DAYS, HUNGER_DEATH, THIRST_DEATH } from '../core/constants.js';
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_ORDER } from '../core/difficulty.js';
+import { ENDING_ORDER, ENDINGS, epilogue } from '../core/endings.js';
 import { RESOURCES, portions } from '../core/items.js';
 import {
   deathRisk,
@@ -19,7 +20,7 @@ import { renderShelter } from './shelter.js';
 
 // ── 시작 화면 ────────────────────────────────────
 
-export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY }) {
+export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY, discovered = [] }) {
   const levels = DIFFICULTY_ORDER.map((id) => {
     const d = DIFFICULTIES[id];
     return `<label class="level ${id} ${id === difficulty ? 'on' : ''}">
@@ -36,7 +37,7 @@ export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY }) {
         <li><b>60초</b> — 마트와 집을 오가며 4칸 가방으로 물자를 나른다. 집 앞에 들어서면 가방이 비워지니 몇 번이고 다시 다녀올 수 있다. 60초가 끝날 때 집 앞에 있어야 산다.</li>
         <li><b>가족</b> — 집 주변에 흩어져 숨은 가족 3명도 칸을 차지한다. 물자와 가족 중 무엇을 먼저 옮길지 정하자.</li>
         <li><b>생존</b> — 통조림 한 캔, 물 한 병을 네 번에 나눠 먹으며 버틴다. 물자가 모자라면 한 명을 탐사로 내보낸다. 무엇을 들고 올지, 돌아오기는 할지 아무도 모른다.</li>
-        <li><b>일지</b> — 하루하루가 공책에 적힌다. 버티기만 해서는 끝나지 않는다. 사건에 귀 기울이다 보면 언젠가 이곳을 벗어날 기회가 온다.</li>
+        <li><b>일지</b> — 하루하루가 공책에 적힌다. 버티기만 해서는 끝나지 않는다. 사건에 귀 기울이다 보면 이곳을 벗어날 기회가 온다. 결말은 하나가 아니다.</li>
       </ol>
       <form class="start-form" data-form="start">
         <fieldset class="levels">
@@ -49,6 +50,7 @@ export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY }) {
         </div>
       </form>
       <p class="muted small">조작: 이동 WASD·방향키(또는 화면을 누른 채 끌기) · 줍기 E/Space · 내려놓기 1~4</p>
+      ${renderCodex(discovered)}
     </section>`;
 }
 
@@ -316,14 +318,39 @@ export function renderHome(game, ui = {}) {
 
 // ── 결말 ─────────────────────────────────────────
 
-export function renderEnding(game) {
+const KICKER = { victory: '생존 성공', odd: '기묘한 결말', defeat: '게임 오버' };
+
+/** 결말 도감: 본 결말은 제목이, 못 본 결말은 물음표만 보인다(조건은 어디에도 없다). */
+export function renderCodex(discovered = []) {
+  const seen = new Set(discovered);
+  const cells = ENDING_ORDER.map((id) => {
+    const e = ENDINGS[id];
+    return seen.has(id)
+      ? `<li class="codex-cell seen ${e.type}" data-ending="${id}"><span class="codex-icon" aria-hidden="true">${e.icon}</span><span>${esc(e.title)}</span></li>`
+      : '<li class="codex-cell unseen"><span class="codex-icon" aria-hidden="true">?</span><span>???</span></li>';
+  }).join('');
+  const count = ENDING_ORDER.filter((id) => seen.has(id)).length;
+  return `
+    <section class="codex" data-ref="codex">
+      <h3>결말 도감 <span class="count">${count} / ${ENDING_ORDER.length}</span></h3>
+      <ul class="codex-grid">${cells}</ul>
+    </section>`;
+}
+
+export function renderEnding(game, { discovered = [], isNew = false } = {}) {
   const e = game.ending;
   const last = game.pendingEntries().map(entryHtml).join('');
+  const after = epilogue(game)
+    .map((l) => `<li class="${l.tone}" data-person="${l.id}"><b>${esc(l.name)}</b> ${esc(l.text)}</li>`)
+    .join('');
   return `
     <section class="ending-screen ${e.type}" data-screen="ending" data-ending="${e.id}">
-      <p class="kicker">${e.type === 'victory' ? '생존 성공' : '게임 오버'}</p>
+      <p class="kicker">${KICKER[e.type]}</p>
+      <p class="ending-icon" aria-hidden="true">${e.icon ?? ''}</p>
       <h1>${esc(e.title)}</h1>
+      ${when(isNew, '<p class="new-ending" data-ref="new-ending">새로운 결말을 발견했다!</p>')}
       <p class="ending-text">${esc(e.text)}</p>
+      ${when(after, () => `<section class="epilogue" data-ref="epilogue"><h3>그 뒤의 이야기</h3><ul>${after}</ul></section>`)}
       <dl class="stats">
         <div><dt>난이도</dt><dd>${esc(e.difficulty)}</dd></div>
         <div><dt>버틴 날</dt><dd>${e.day}일</dd></div>
@@ -336,5 +363,6 @@ export function renderEnding(game) {
         <button type="button" class="btn primary big" data-action="new-game">새 게임 <small>난이도 고르기</small></button>
         <button type="button" class="btn big" data-action="same-seed">같은 시드로 다시 <small>${esc(game.difficulty.name)} · ${game.seed}</small></button>
       </div>
+      ${renderCodex(discovered)}
     </section>`;
 }

@@ -1340,6 +1340,112 @@ kbd {
   color: var(--bad);
 }
 
+.ending-screen.odd h1 {
+  color: #c9b6ff;
+}
+
+.ending-icon {
+  font-size: 48px;
+  line-height: 1;
+  margin: 6px 0 4px;
+}
+
+.new-ending {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+  padding: 2px 12px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+
+.epilogue {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin: 18px 0 0;
+}
+
+.epilogue ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.epilogue li b {
+  display: inline-block;
+  min-width: 44px;
+  margin-right: 6px;
+}
+
+.epilogue li.good b {
+  color: var(--ok);
+}
+
+.epilogue li.bad {
+  color: var(--muted);
+}
+
+.codex {
+  text-align: left;
+  margin-top: 26px;
+}
+
+.codex h3 .count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.codex-grid {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.codex-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.codex-cell.unseen {
+  color: var(--muted);
+  border-style: dashed;
+  background: transparent;
+}
+
+.codex-cell.seen.victory {
+  border-color: rgba(127, 209, 139, 0.6);
+}
+
+.codex-cell.seen.odd {
+  border-color: rgba(201, 182, 255, 0.6);
+}
+
+.codex-cell.seen.defeat {
+  border-color: rgba(255, 107, 94, 0.5);
+}
+
+.codex-icon {
+  width: 22px;
+  text-align: center;
+  font-size: 16px;
+}
+
 .ending-text {
   font-size: 18px;
 }

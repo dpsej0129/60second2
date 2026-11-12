@@ -308,7 +308,11 @@ async function main() {
         assert.ok(ending, '결말에 도달한다');
         assert.equal(ending.difficulty, '이지');
         results.push({ target, seed, difficulty: 'easy', zombies: false, ending: ending.id });
-        if (first) await page.screenshot({ path: join(OUT, 'flow-7-ending.png') });
+        if (first) {
+          await page.screenshot({ path: join(OUT, 'flow-7-ending.png'), fullPage: true });
+          assert.ok(await page.$('[data-ref="new-ending"]'), '처음 본 결말은 새 결말로 표시된다');
+          assert.ok(await page.$('[data-ref="epilogue"] li'), '식구마다 후일담이 나온다');
+        }
         if (ending.id === target) {
           won = true;
           break;
@@ -357,6 +361,12 @@ async function main() {
     await page.click('[data-action="new-game"]');
     await waitScreen(page, 'title');
     assert.equal(await page.$$eval('input[name="difficulty"]', (els) => els.length), 3);
+    // 결말 도감: 이번 검증에서 본 결말이 모두 기록되어 있다
+    const seen = new Set([...results.map((r) => r.ending), 'timeout']);
+    const codex = await page.$$eval('[data-ref="codex"] .codex-cell.seen', (els) => els.map((el) => el.dataset.ending));
+    assert.deepEqual(new Set(codex), seen, '본 결말이 도감에 남는다');
+    log(`[결말 도감] ${codex.length}/12: ${codex.join(', ')}`);
+    await page.screenshot({ path: join(OUT, 'title-codex.png'), fullPage: true });
 
     assert.deepEqual(errors, [], '브라우저 콘솔 오류 없음');
     log('\nE2E 결과', JSON.stringify(results));

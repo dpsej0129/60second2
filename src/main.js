@@ -12,6 +12,32 @@ import { randomSeed } from './core/rng.js';
 import { RunView } from './ui/runView.js';
 import { renderEnding, renderHome, renderTitle } from './ui/screens.js';
 
+// 결말 도감: 본 결말 id 목록을 이 브라우저에만 저장한다(저장소를 못 쓰면 이번 방문 동안만 기억).
+const CODEX_KEY = 'mart60.endings';
+const codex = {
+  memory: new Set(),
+  load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CODEX_KEY) ?? '[]');
+      if (Array.isArray(saved)) for (const id of saved) this.memory.add(id);
+    } catch {
+      /* 저장소를 쓸 수 없는 환경 */
+    }
+    return [...this.memory];
+  },
+  /** 새로 본 결말이면 true */
+  add(id) {
+    const fresh = !this.load().includes(id);
+    this.memory.add(id);
+    try {
+      localStorage.setItem(CODEX_KEY, JSON.stringify([...this.memory]));
+    } catch {
+      /* 저장하지 못해도 게임은 계속된다 */
+    }
+    return fresh;
+  },
+};
+
 const params = new URLSearchParams(location.search);
 const OPTIONS = {
   seed: params.get('seed') ? Number(params.get('seed')) : null,
@@ -38,7 +64,7 @@ class App {
   showTitle(seed = null) {
     this.teardown();
     this.game = null;
-    this.root.innerHTML = renderTitle({ seed, difficulty: this.difficulty });
+    this.root.innerHTML = renderTitle({ seed, difficulty: this.difficulty, discovered: codex.load() });
     document.title = '마트 탈출 60초';
   }
 
@@ -90,7 +116,14 @@ class App {
     const game = this.game;
     if (!game || this.runView) return;
     if (game.phase === 'home') this.root.innerHTML = renderHome(game, this.ui);
-    else if (game.phase === 'ending') this.root.innerHTML = renderEnding(game);
+    else if (game.phase === 'ending') {
+      if (this.recordedEnding !== game) {
+        // 결말은 게임마다 한 번만 도감에 적는다
+        this.recordedEnding = game;
+        this.newEnding = codex.add(game.ending.id);
+      }
+      this.root.innerHTML = renderEnding(game, { discovered: codex.load(), isNew: this.newEnding });
+    }
     document.title = game.phase === 'home' ? `${game.day}일차 · 마트 탈출 60초` : '마트 탈출 60초';
   }
 
