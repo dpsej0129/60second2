@@ -247,10 +247,18 @@ function expeditionSection(game, draft) {
     })
     .join('');
   const sendReason = blocked ?? (memberId ? null : '보낼 수 있는 사람이 없다');
+  const streak = game.nextTripStreak();
+  const tired =
+    streak >= 3
+      ? '연달아 탐사를 보내 모두 지쳐 있다. 며칠 쉬게 하지 않으면 다치거나 길을 잃기 쉽다.'
+      : streak === 2
+        ? '얼마 전에도 탐사를 다녀왔다. 쉬지 않고 이어 보내면 지친 몸으로 나가는 셈이라 더 위험하다.'
+        : null;
   return `
     <section class="today-part expedition" data-ref="expedition">
       <h3>탐사 보내기</h3>
       <p class="muted small">한 명을 내보내 물자를 구해 오게 한다. 며칠 뒤 아침에 돌아온다. 무엇을 들고 올지는 알 수 없고, 다치거나 영영 돌아오지 못할 수도 있다.</p>
+      ${when(tired && !blocked, () => `<p class="warning" data-ref="tired">${esc(tired)}</p>`)}
       <div class="choices">${members}</div>
       ${when(
         game.stock.weapon > 0,

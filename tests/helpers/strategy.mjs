@@ -1,7 +1,7 @@
 // 게임 전체를 대신 플레이하는 전략(검증 도구). 목표 승리 경로(target)를 정하면
 // 그 경로의 사건은 수락하고 나머지 경로는 거절하며, 필요한 물자를 탐사로 구해 온다.
 //   target: 'rescue' | 'group' | 'car' | 'safezone' | 'caravan' | 'train' | 'all'(모든 경로 수락) | 'none'(모든 경로 거절)
-import { HUNGER_NOTICE, SIM_STEP, THIRST_NOTICE } from '../../src/core/constants.js';
+import { HUNGER_DEATH, HUNGER_NOTICE, SIM_STEP, THIRST_DEATH, THIRST_NOTICE } from '../../src/core/constants.js';
 import { quizAnswerId } from '../../src/core/events/missions.js';
 import { SERVINGS } from '../../src/core/items.js';
 import { RunBot, scramblePlan } from './bot.mjs';
@@ -165,6 +165,10 @@ export function talkTarget(game) {
 /** 보낼 수 있으면 늘 한 명을 내보낸다(무엇을 가져올지는 고를 수 없다). */
 export function expeditionPlan(game) {
   if (game.expeditionReason()) return null;
+  // 연달아 세 번째부터는 하룻밤 쉬어 간다(한 끼 몫도 안 남았을 때만 무리해서 보낸다)
+  const n = game.presentPeople().length;
+  const urgent = game.stock.food < n || game.stock.water < n;
+  if (game.nextTripStreak() >= 3 && !urgent) return null;
   const memberId = expeditionMember(game);
   if (!memberId) return null;
   return { memberId, withWeapon: game.stock.weapon > 0 };
@@ -177,21 +181,24 @@ export function desiredRations(game, target) {
   const reserve = reserveFor(game, target);
   const present = game.presentPeople();
   const plan = Object.fromEntries(present.map((p) => [p.id, { food: false, water: false }]));
+  // 경로용으로 아껴 둔 몫도, 오늘 밤 숨질 사람이 있으면 내어 준다
   let water = game.stock.water - reserve.water;
+  let spare = reserve.water;
   for (const p of [...present].sort((a, b) => b.thirst - a.thirst)) {
-    if (water <= 0) break;
-    if (p.thirst >= THIRST_NOTICE) {
-      plan[p.id].water = true;
-      water -= 1;
-    }
+    if (p.thirst < THIRST_NOTICE) continue;
+    if (water > 0) water -= 1;
+    else if (p.thirst >= THIRST_DEATH - 1 && spare > 0 && game.stock.water > 0) spare -= 1;
+    else continue;
+    plan[p.id].water = true;
   }
   let food = game.stock.food - reserve.food;
+  spare = reserve.food;
   for (const p of [...present].sort((a, b) => b.hunger - a.hunger)) {
-    if (food <= 0) break;
-    if (p.hunger >= HUNGER_NOTICE) {
-      plan[p.id].food = true;
-      food -= 1;
-    }
+    if (p.hunger < HUNGER_NOTICE) continue;
+    if (food > 0) food -= 1;
+    else if (p.hunger >= HUNGER_DEATH - 1 && spare > 0 && game.stock.food > 0) spare -= 1;
+    else continue;
+    plan[p.id].food = true;
   }
   return plan;
 }

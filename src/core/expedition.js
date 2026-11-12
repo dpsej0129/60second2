@@ -27,10 +27,20 @@ export const NEED_BOOST = 3;
  * 이번 탐사의 위험도. count = 지금까지 떠난 탐사 수, scale = 난이도·지름길 등에 따른 배수.
  * lost: 돌아오지 못할 확률, injury: 다쳐서 돌아올 확률
  */
-export function expeditionRisk(member, { withWeapon = false, count = 0, scale = 1 } = {}) {
+/** 쉬지 않고 연달아 보내는 탐사(streak번째)일수록 위험이 커지는 배수 */
+export function fatigueFactor(streak) {
+  const extra = Math.min(3, Math.max(0, streak - 1));
+  return { lost: 1 + 0.5 * extra, injury: 1 + 0.35 * extra };
+}
+
+export function expeditionRisk(member, { withWeapon = false, count = 0, scale = 1, streak = 1 } = {}) {
   // 탐사를 거듭할수록 위험해지지만, 100일 가까이 버티는 동안 여러 번 보낼 수 있도록 천천히 오른다.
   let lost = Math.min(0.12, 0.03 + 0.004 * count);
   let injury = Math.min(0.32, 0.12 + 0.008 * count);
+  // 쉬지 않고 연달아 보내면 지친 몸으로 나가는 셈이라 훨씬 위험하다
+  const tired = fatigueFactor(streak);
+  lost *= tired.lost;
+  injury *= tired.injury;
   if (member.trait === 'guard') {
     lost *= 0.5;
     injury *= 0.6;

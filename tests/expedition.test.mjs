@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { renderHome } from '../src/ui/screens.js';
 import { test } from 'node:test';
 import { EXPEDITION_DAYS } from '../src/core/constants.js';
 import { LOOT_WEIGHTS, expeditionRisk, rollItems, rollLoot } from '../src/core/expedition.js';
@@ -193,4 +194,37 @@ test('새 게임은 탐사 기록 없이 시작한다', () => {
   const game = new Game({ seed: 1 });
   assert.equal(game.expeditions, 0);
   assert.equal(game.expedition, null);
+});
+
+test('쉬지 않고 연달아 탐사를 보내면 다치거나 돌아오지 못할 위험이 커지고, 며칠 쉬면 풀린다', () => {
+  const game = homeGame({ seed: 71, stock: { food: 99, water: 99 } });
+  game.director.randomEvents = [];
+  game.director.pick = () => null;
+  const fresh = game.expeditionRisk('mom');
+  assert.equal(game.nextTripStreak(), 1);
+  assert.equal(renderHome(game).includes('data-ref="tired"'), false, '쉬었으면 경고가 없다');
+
+  // 보내고, 돌아오자마자 다시 보내기를 되풀이한다
+  const risks = [];
+  for (let trip = 0; trip < 3; trip++) {
+    risks.push(game.expeditionRisk('mom'));
+    game.sendExpedition({ memberId: 'mom' });
+    game.expedition.risk = { lost: 0, injury: 0 }; // 이 검사에서는 무사히 돌아오게 한다
+    for (let d = 0; d < 8 && game.expedition; d++) game.endDay();
+    assert.equal(game.person('mom').status, 'home');
+  }
+  assert.ok(risks[1].lost > risks[0].lost * 1.3 && risks[1].injury > risks[0].injury * 1.2, '두 번째 연속 탐사는 더 위험하다');
+  assert.ok(risks[2].lost > risks[1].lost, '세 번째는 더 위험하다');
+  assert.equal(game.nextTripStreak(), 4);
+  assert.match(renderHome(game), /연달아 탐사를 보내 모두 지쳐 있다/);
+  assert.doesNotMatch(renderHome(game), /%/, '수치는 보이지 않는다');
+
+  // 아무도 나가지 않은 밤을 보내면 하룻밤마다 하나씩 풀린다
+  game.endDay();
+  assert.equal(game.nextTripStreak(), 3);
+  for (let d = 0; d < 3; d++) game.endDay();
+  assert.equal(game.nextTripStreak(), 1);
+  const rested = game.expeditionRisk('mom');
+  assert.ok(rested.lost < risks[1].lost && rested.injury < risks[1].injury, '충분히 쉬면 연달아 보낼 때보다 덜 위험하다');
+  assert.ok(rested.lost < fresh.lost * 1.5, '탐사를 여러 번 했다는 것만큼만 더 위험하다');
 });

@@ -51,6 +51,8 @@ export class Game {
     // 미션 등으로 생기는 지속 상태. dog: 떠돌이 개 보리와 함께 지냄, shortcut: 탐사 지름길을 앎
     // gangAnger: 약탈자 쪽지를 무시한 횟수, robes: 하얀 옷의 사람들이 찾아온 횟수
     // hordeDay: 좀비 떼가 지나갈 날, barricade: 그 전에 문과 창을 막았는지
+    this.tripStreak = 0; // 쉬지 않고 이어 보낸 탐사 수
+    this.restDays = 0; // 아무도 탐사를 나가 있지 않은 밤의 수(하룻밤마다 연속 탐사 피로가 하나 풀린다)
     this.flags = {
       dog: false,
       shortcut: false,
@@ -236,7 +238,15 @@ export class Game {
   /** 화면에는 보여 주지 않는 내부 위험도 */
   expeditionRisk(memberId, withWeapon = false) {
     const scale = this.difficulty.expedition.risk * (this.flags.shortcut ? 0.7 : 1);
-    return expeditionRisk(this.person(memberId), { withWeapon, count: this.expeditions, scale });
+    return expeditionRisk(this.person(memberId), { withWeapon, count: this.expeditions, scale, streak: this.nextTripStreak() });
+  }
+
+  /**
+   * 지금 탐사를 보내면 몇 번째 '연속' 탐사가 되는지. 아무도 나가 있지 않은 밤을 하루 보낼 때마다 하나씩 풀린다.
+   * 1이면 충분히 쉰 뒤의 탐사, 2 이상이면 쉬지 않고 연달아 보내는 탐사다.
+   */
+  nextTripStreak() {
+    return Math.max(0, this.tripStreak - this.restDays) + 1;
   }
 
   /** 탐사를 보낼 수 없으면 그 이유 */
@@ -266,6 +276,8 @@ export class Game {
       risk: this.expeditionRisk(memberId, weapon),
     };
     this.expeditions += 1;
+    this.tripStreak = this.nextTripStreak();
+    this.restDays = 0;
     p.status = 'away';
     this.addLog(`${josa(p.name, '이/가')} ${weapon ? '야구 방망이를 챙겨 들고 ' : ''}물자를 찾아 밖으로 나갔다.`, 'event', 'action');
     this.syncRations();
@@ -746,6 +758,7 @@ export class Game {
       }
     }
 
+    if (!this.expedition) this.restDays += 1;
     const lostMind = this.updateMoods(present, report);
     this.checkDeaths(report);
     if (lostMind && !this.ending) this.setEnding('madness');
