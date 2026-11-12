@@ -50,8 +50,9 @@ test('집 안 장면에 집에 있는 사람과 재고 물품이 그림으로 �
   let svg = renderShelter(game);
   for (const id of ['me', 'dad', 'sis']) assert.match(svg, new RegExp(`data-person="${id}"`));
   assert.doesNotMatch(svg, /data-person="mom"/, '데려오지 못한 엄마는 없다');
-  assert.match(svg, /식량 9/);
-  assert.match(svg, /물 4/);
+  assert.match(svg, /통조림 2¼캔/, '9번 = 2¼캔');
+  assert.match(svg, /data-left="1"/, '딴 캔은 ¼만 남아 흐리게 보인다');
+  assert.match(svg, /물 1병/);
   assert.match(svg, /연료통 2/);
   assert.match(svg, /무전기 1/);
   assert.doesNotMatch(svg, /신호탄/, '없는 물품은 그리지 않는다');
@@ -60,7 +61,7 @@ test('집 안 장면에 집에 있는 사람과 재고 물품이 그림으로 �
   game.stock.food = 0;
   game.person('sis').health = 2;
   svg = renderShelter(game);
-  assert.doesNotMatch(svg, /식량 \d/, '다 먹으면 선반에서 사라진다');
+  assert.doesNotMatch(svg, /통조림 \d/, '다 먹으면 선반에서 사라진다');
   assert.match(svg, /shelter-person critical" data-person="sis"/, '중상이면 누워 있다');
 
   resolveAnyEvent(game);

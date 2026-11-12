@@ -1,10 +1,13 @@
 // 물품. slots = 가방에서 차지하는 칸 수, gives = 집 재고로 들어올 때 늘어나는 자원.
 import { INVENTORY_SLOTS } from './constants.js';
 
-// 식량·물은 챙긴 개수 그대로 재고가 된다(1개 = 1). 여러 번 쓰는 대형 구급상자만 3회분이다.
+// 식량·물은 60 Seconds!처럼 한 캔(한 병)을 여러 번 나눠 먹는다.
+// 재고는 '한 사람이 한 번 먹는 양(1/4캔)' 단위로 센다. 통조림 1캔 = 4번, 생수 1병 = 4번.
+export const SERVINGS = 4;
+
 export const ITEMS = {
-  canned: { id: 'canned', name: '통조림', short: '통조림', slots: 1, gives: { food: 1 }, note: '식량 1' },
-  water: { id: 'water', name: '생수', short: '생수', slots: 1, gives: { water: 1 }, note: '물 1' },
+  canned: { id: 'canned', name: '통조림', short: '통조림', slots: 1, gives: { food: SERVINGS }, note: '1캔 · 4번 나눠 먹는다' },
+  water: { id: 'water', name: '생수', short: '생수', slots: 1, gives: { water: SERVINGS }, note: '1병 · 4번 나눠 마신다' },
   bandage: { id: 'bandage', name: '소형 구급약', short: '구급약', slots: 1, gives: { med: 1 }, note: '구급약 1회분' },
   medkit: { id: 'medkit', name: '대형 구급상자', short: '구급상자', slots: 2, gives: { med: 3 }, note: '구급약 3회분 · 여러 번 쓸 수 있다' },
   radio: { id: 'radio', name: '무전기', short: '무전기', slots: 1, gives: { radio: 1 }, note: '외부와 교신할 수 있다' },
@@ -21,8 +24,8 @@ for (const item of Object.values(ITEMS)) {
 }
 
 export const RESOURCES = {
-  food: { name: '식량', unit: '개' },
-  water: { name: '물', unit: '개' },
+  food: { name: '통조림', unit: '캔', portions: true },
+  water: { name: '물', unit: '병', portions: true },
   med: { name: '구급약', unit: '회분' },
   radio: { name: '무전기', unit: '대' },
   battery: { name: '건전지', unit: '개' },
@@ -39,9 +42,26 @@ export function emptyStock() {
   return Object.fromEntries(RESOURCE_KEYS.map((key) => [key, 0]));
 }
 
+const QUARTERS = ['', '¼', '½', '¾'];
+
+/** 나눠 먹는 단위(1/4)를 캔·병으로: 6 → '1½', 4 → '1', 1 → '¼' */
+export function portions(n) {
+  const whole = Math.floor(n / SERVINGS);
+  const rest = n % SERVINGS;
+  if (!rest) return String(whole);
+  return `${whole || ''}${QUARTERS[rest]}`;
+}
+
+/** 자원 하나를 사람이 읽는 말로: food 6 → '통조림 1½캔', battery 2 → '건전지 2개' */
+export function formatAmount(key, n) {
+  const res = RESOURCES[key];
+  if (res.portions) return `${res.name} ${portions(n)}${res.unit}`;
+  return `${res.name} ${n}${res.unit}`;
+}
+
 export function formatResources(bag) {
   return Object.entries(bag)
     .filter(([, n]) => n > 0)
-    .map(([key, n]) => `${RESOURCES[key].name} ${n}`)
+    .map(([key, n]) => formatAmount(key, n))
     .join(', ');
 }

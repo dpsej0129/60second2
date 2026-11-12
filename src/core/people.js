@@ -4,6 +4,9 @@ import {
   HEALTH_DEATH,
   HUNGER_DEATH,
   HUNGER_NOTICE,
+  MOOD_BROKEN,
+  MOOD_DEPRESSED,
+  MOOD_LOW,
   HUNGER_WEAK,
   THIRST_DEATH,
   THIRST_NOTICE,
@@ -80,6 +83,8 @@ export function createPerson(def, status) {
     health: def.initialHealth ?? 0,
     untreated: 0,
     treatedToday: false,
+    mood: 0, // 마음 상태(가족만)
+    talkedToday: false,
     cause: null,
   };
 }
@@ -88,7 +93,7 @@ export const isHome = (p) => p?.status === 'home';
 
 /** 사건에서 몸을 써서 행동할 수 있는 상태인지 */
 export function isCapable(p) {
-  return isHome(p) && p.health < HEALTH_CRITICAL && p.hunger < HUNGER_WEAK && p.thirst < THIRST_WEAK;
+  return isHome(p) && p.health < HEALTH_CRITICAL && p.hunger < HUNGER_WEAK && p.thirst < THIRST_WEAK && p.mood < MOOD_DEPRESSED;
 }
 
 export function incapableReason(p) {
@@ -96,6 +101,7 @@ export function incapableReason(p) {
   if (p.health >= HEALTH_CRITICAL) return '중상으로 움직일 수 없다';
   if (p.hunger >= HUNGER_WEAK) return '굶주려 힘이 없다';
   if (p.thirst >= THIRST_WEAK) return '탈수로 정신이 흐릿하다';
+  if (p.mood >= MOOD_DEPRESSED) return '깊은 우울에 빠져 아무것도 하려 하지 않는다';
   return null;
 }
 
@@ -115,6 +121,16 @@ export function thirstLabel(t) {
   if (t < THIRST_DEATH) return { text: '탈수', tone: 'bad' };
   return { text: '탈수사', tone: 'bad' };
 }
+
+export function moodLabel(m) {
+  if (m <= 0) return { text: '안정', tone: 'ok' };
+  if (m === 1) return { text: '지침', tone: 'ok' };
+  if (m === MOOD_LOW) return { text: '울적함', tone: 'warn' };
+  if (m === MOOD_DEPRESSED) return { text: '우울함', tone: 'bad' };
+  return { text: '환청·망상', tone: 'bad' };
+}
+
+export const MOOD_MAX = MOOD_BROKEN;
 
 export const needsFood = (p) => p.hunger >= HUNGER_NOTICE;
 export const needsWater = (p) => p.thirst >= THIRST_NOTICE;

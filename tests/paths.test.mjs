@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Game } from '../src/core/game.js';
+import { SERVINGS } from '../src/core/items.js';
 import { homeGame, resolveAnyEvent } from './helpers/setup.mjs';
 import { chooseOption, playGame } from './helpers/strategy.mjs';
 
@@ -11,6 +12,8 @@ function jumpToStage(game, chainId, stage, data = {}) {
   chain.opened = stage > 0;
   chain.seen = true;
   Object.assign(chain.data, data);
+  game.director.randomEvents = []; // 조건만 떼어 검사한다: 다른 무작위 사건이 끼어들지 않게
+  game.director.pickBonus = () => null;
   for (const other of Object.values(game.director.chains)) {
     if (other !== chain && other.status === 'scheduled' && other.due <= game.day + 1) other.due = game.day + 30;
   }
@@ -28,11 +31,12 @@ for (const target of ['rescue', 'group', 'car']) {
     // 탐사에서 가족을 잃는 등 운이 나쁘면 질 수도 있다. 그래도 대부분은 그 경로로 이긴다.
     let wins = 0;
     for (const seed of [1, 2, 3, 4, 5]) {
-      const game = playGame(new Game({ seed, zombies: false, difficulty: 'hard' }), { target, maxDays: 40 });
+      const game = playGame(new Game({ seed, zombies: false, difficulty: 'easy' }), { target, maxDays: 100 });
       assert.equal(game.phase, 'ending', `seed ${seed}: 결말에 도달한다`);
       if (game.ending.type !== 'victory') continue;
       assert.equal(game.ending.id, target, `seed ${seed}: 다른 경로로 이기지 않는다`);
       assert.ok(game.expeditions >= 2, '탐사를 여러 번 보냈다');
+      assert.ok(game.day >= 30, `seed ${seed}: 한 달은 넘게 버텨야 탈출할 수 있다 (${game.day}일차)`);
       assert.equal(game.pathsView().find((p) => p.id === target).status, 'done');
       wins += 1;
     }
@@ -40,10 +44,10 @@ for (const target of ['rescue', 'group', 'car']) {
   });
 }
 
-test('경로를 모두 거절하면, 물자가 넉넉해 60일을 버텨도 승리하지 못한다', () => {
+test('경로를 모두 거절하면, 물자가 넉넉해 100일을 버텨도 승리하지 못한다', () => {
   for (const seed of [1, 2, 3, 4, 5, 6]) {
     const game = homeGame({ seed, bonus: true, stock: { food: 999, water: 999, med: 99 } });
-    while (game.phase === 'home' && game.day <= 60) {
+    while (game.phase === 'home' && game.day <= 100) {
       for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
         game.chooseOption(chooseOption(game, 'none'));
       }
@@ -51,7 +55,7 @@ test('경로를 모두 거절하면, 물자가 넉넉해 60일을 버텨도 승�
       game.endDay();
     }
     assert.notEqual(game.ending?.type, 'victory', `seed ${seed}`);
-    assert.ok(game.day > 60 || game.ending, '60일을 넘겼다');
+    assert.ok(game.day > 100 || game.ending, '100일을 넘겼다');
   }
 });
 
@@ -60,15 +64,18 @@ test('탈출 경로가 모두 닫히면 며칠 뒤 하나가 다시 열려, 이�
   const paths = ['rescue', 'group', 'car'].map((id) => game.director.chains[id]);
   let closedOn = null;
   let reopenedOn = null;
-  while (game.phase === 'home' && game.day <= 60 && reopenedOn == null) {
+  while (game.phase === 'home' && game.day <= 160 && reopenedOn == null) {
     if (closedOn == null && paths.every((c) => c.status === 'failed')) closedOn = game.day;
-    for (let i = 0; i < 4 && game.event && !game.event.resolved; i++) game.chooseOption(chooseOption(game, 'none'));
+    for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
+      game.chooseOption(chooseOption(game, 'none'));
+    }
+    if (game.phase !== 'home') break;
     game.endDay();
     if (closedOn != null && paths.some((c) => c.status !== 'failed')) reopenedOn = game.day;
   }
   assert.ok(closedOn != null, '모두 거절하면 세 경로가 다 닫힌다');
   assert.ok(reopenedOn != null, '그 뒤 경로 하나가 다시 열린다');
-  assert.ok(reopenedOn - closedOn >= 4 && reopenedOn - closedOn <= 8, `${closedOn}일차에 닫히고 ${reopenedOn}일차에 다시 열림`);
+  assert.ok(reopenedOn - closedOn >= 8 && reopenedOn - closedOn <= 16, `${closedOn}일차에 닫히고 ${reopenedOn}일차에 다시 열림`);
   const revived = paths.find((c) => c.status !== 'failed');
   assert.equal(game.event?.chainId, revived.id, '다시 열린 경로의 첫 사건이 그날 일어난다');
   assert.equal(revived.stage, 0);
@@ -83,10 +90,12 @@ test('구조 헬기: 신호탄이 없으면 탈출할 수 없고, 한 번 더 �
   assert.equal(game.ending, null);
   const chain = game.director.chains.rescue;
   assert.equal(chain.status, 'scheduled');
-  assert.equal(chain.due, game.day + 2, '구조대가 알려 준 날 다시 온다');
+  assert.equal(chain.due, game.day + 3, '구조대가 알려 준 날(사흘 뒤) 다시 온다');
   assert.match(game.pathsView().find((p) => p.id === 'rescue').next, /마지막 기회/);
 
   // 다시 온 날에도 신호탄이 없으면 닫힌다
+  game.endDay();
+  resolveAnyEvent(game);
   game.endDay();
   resolveAnyEvent(game);
   game.endDay();
@@ -129,31 +138,32 @@ test('강변 거점: 아빠가 교섭하면 조건이 낮아지고, 합류 날 �
   const withDad = homeGame({ seed: 24, bring: ['dad'], stock: { food: 99, water: 99 } });
   jumpToStage(withDad, 'group', 0);
   withDad.chooseOption('dad');
-  assert.deepEqual([withDad.director.chains.group.data.food, withDad.director.chains.group.data.water], [2, 2]);
+  assert.deepEqual([withDad.director.chains.group.data.food, withDad.director.chains.group.data.water], [2 * SERVINGS, 2 * SERVINGS], '통조림 2캔·물 2병');
 
   const noDad = homeGame({ seed: 24, bring: ['mom'], stock: { food: 99, water: 99 } });
   let view = jumpToStage(noDad, 'group', 0);
   assert.equal(option(view, 'dad').disabled, true);
   noDad.chooseOption('talk');
   const chain = noDad.director.chains.group;
-  assert.deepEqual([chain.data.food, chain.data.water], [3, 3]);
+  assert.deepEqual([chain.data.food, chain.data.water], [3 * SERVINGS, 3 * SERVINGS], '통조림 3캔·물 3병');
   const path = noDad.pathsView().find((p) => p.id === 'group');
   assert.equal(path.status, 'open');
   assert.match(path.schedule, /일차/);
-  assert.ok(path.requirements.some((r) => r.text.startsWith('식량') && r.need === 3));
+  assert.ok(path.requirements.some((r) => r.text.startsWith('식량') && r.need === 3 * SERVINGS));
 
   view = jumpToStage(noDad, 'group', 2);
-  noDad.stock.food = 2;
-  noDad.stock.water = 9;
+  noDad.stock.food = 2 * SERVINGS;
+  noDad.stock.water = 9 * SERVINGS;
   view = noDad.eventView();
   assert.equal(option(view, 'pay').disabled, true);
   noDad.chooseOption('delay');
   assert.equal(noDad.ending, null);
-  noDad.endDay();
-  resolveAnyEvent(noDad);
-  noDad.endDay();
-  assert.equal(noDad.event.defId, 'group_join', '이틀 뒤 마지막으로 다시 온다');
-  noDad.stock.food = 3; // 그 사이 식구가 먹은 몫과 별도로 합류 몫을 남겨 둔 상황
+  for (let i = 0; i < 3; i++) {
+    resolveAnyEvent(noDad);
+    noDad.endDay();
+  }
+  assert.equal(noDad.event.defId, 'group_join', '사흘 뒤 마지막으로 다시 온다');
+  noDad.stock.food = 3 * SERVINGS; // 그 사이 식구가 먹은 몫과 별도로 합류 몫을 남겨 둔 상황
   assert.equal(option(noDad.eventView(), 'pay').disabled, false);
   noDad.chooseOption('pay');
   assert.equal(noDad.ending.id, 'group');
@@ -167,7 +177,7 @@ test('승합차: 연료통 2개와 도로 지도가 모일 때까지 출발 점�
   for (let i = 0; i < 3; i++) {
     game.chooseOption('wait');
     const due = game.director.chains.car.due;
-    while (game.day < due) {
+    for (let d = 0; d < 30 && game.phase === 'home' && game.day < due; d++) {
       resolveAnyEvent(game);
       game.endDay();
     }

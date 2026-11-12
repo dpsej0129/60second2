@@ -44,6 +44,22 @@ const RANDOM_PREFS = {
   vending: ['toolkit', 'coin'],
   mystery_cans: ['dog', 'open'],
   granny_knock: ['mom', 'med', 'ignore'],
+  depression: ['mom', 'dog', 'listen'],
+  voices: ['mom', 'med', 'stay'],
+  nightmare: ['hug'],
+  cabin_fever: ['window'],
+  argument: ['mediate'],
+  birthday: ['song'],
+  board_game: ['play'],
+  radio_music: ['off'],
+  note: ['pin'],
+  dysentery: ['med', 'boil', 'endure'],
+  fever: ['med', 'mom', 'endure'],
+  toothache: ['med', 'pull'],
+  pipe_leak: ['toolkit', 'pot'],
+  cold_snap: ['huddle'],
+  flyby: ['watch'],
+  stranger_cough: ['water', 'refuse'],
 };
 
 const wants = (target, chainId) => target === 'all' || target === chainId;
@@ -81,13 +97,13 @@ export function reserveFor(game, target) {
 export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
   let first = ['water', 'water', 'canned', 'canned'];
   if (target === 'rescue' || target === 'all') first = ['radio', 'battery', 'battery', 'flare'];
-  if (target === 'car') first = ['toolkit', 'roadmap', 'water'];
+  if (target === 'car') first = ['toolkit', 'roadmap', 'canned'];
   if (target === 'group') first = ['medkit', 'water', 'canned'];
   const legs = [first];
   if (bring.includes('dad')) legs.push(['dad']);
   const pair = ['mom', 'sis'].filter((id) => bring.includes(id));
   if (pair.length) legs.push(pair);
-  if (target === 'car') legs.push(['fuel', 'fuel']);
+  if (target === 'car') legs.push(['fuel', 'water', 'water']);
   for (let i = 0; i < 4; i++) legs.push(['water', 'water', 'canned', 'canned']);
   return legs;
 }
@@ -102,11 +118,19 @@ export function playScramble(game, legs, botOptions) {
 
 // ── 탐사 ─────────────────────────────────────
 
-/** 누구를 보낼지: 아빠 → 엄마 → 동생 순(다치지 않은 사람 먼저). 주인공은 보내지 않는다. */
+/** 누구를 보낼지: 아빠 → 엄마 → 동생 순(다치지 않고 마음이 괜찮은 사람 먼저). 주인공은 보내지 않는다. */
 export function expeditionMember(game) {
   const order = ['dad', 'mom', 'sis'];
   const allowed = (id) => !game.expeditionReason(id);
-  return order.find((id) => allowed(id) && game.person(id).health === 0) ?? order.find(allowed) ?? null;
+  const fit = (id) => game.person(id).health === 0 && game.person(id).mood < 2;
+  return order.find((id) => allowed(id) && fit(id)) ?? order.find(allowed) ?? null;
+}
+
+/** 오늘 이야기를 나눌 사람: 마음이 가장 힘든 가족 */
+export function talkTarget(game) {
+  const list = game.presentPeople().filter((p) => !game.talkReason(p.id));
+  if (!list.length) return null;
+  return list.sort((a, b) => b.mood - a.mood)[0].id;
 }
 
 /** 보낼 수 있으면 늘 한 명을 내보낸다(무엇을 가져올지는 고를 수 없다). */
@@ -181,7 +205,7 @@ export function treat(game, target) {
  * 처음부터 결말(또는 maxDays)까지 플레이한다.
  * bring: 60초 동안 데려올 가족 id 목록
  */
-export function playGame(game, { target = 'all', bring = ['dad', 'mom', 'sis'], maxDays = 40, onDay = null, legs = null } = {}) {
+export function playGame(game, { target = 'all', bring = ['dad', 'mom', 'sis'], maxDays = 100, onDay = null, legs = null } = {}) {
   game.startFirstRun();
   playScramble(game, legs ?? scrambleLegs(target, bring));
   while (game.phase === 'home' && game.day <= maxDays) {
@@ -192,6 +216,8 @@ export function playGame(game, { target = 'all', bring = ['dad', 'mom', 'sis'], 
     if (game.phase !== 'home') break;
     const plan = expeditionPlan(game);
     if (plan) game.sendExpedition(plan);
+    const listener = talkTarget(game);
+    if (listener) game.talk(listener);
     treat(game, target);
     setRations(game, target);
     game.endDay();

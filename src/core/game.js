@@ -1,6 +1,15 @@
 // 게임 전체 흐름: 60초 탐색(물자·가족을 집으로) → 하루 단위 생존(사건·배급·탐사) → 결말.
 // 화면(DOM)과 분리되어 있어 테스트에서 그대로 조작할 수 있다.
-import { EXPEDITION_DAYS, HEALTH_DEATH, HUNGER_DEATH, HUNGER_WEAK, THIRST_DEATH, THIRST_WEAK } from './constants.js';
+import {
+  EXPEDITION_DAYS,
+  HEALTH_DEATH,
+  HUNGER_DEATH,
+  HUNGER_WEAK,
+  MOOD_BROKEN,
+  MOOD_LOW,
+  THIRST_DEATH,
+  THIRST_WEAK,
+} from './constants.js';
 import { DEFAULT_DIFFICULTY, difficultyOf } from './difficulty.js';
 import { ENDINGS } from './endings.js';
 import { CHAINS, EVENT_DEFS, MISSIONS, PATHS, RANDOM_EVENTS } from './events/index.js';
@@ -17,8 +26,10 @@ import {
   incapableReason,
   isCapable,
   isHome,
+  moodLabel,
   needsFood,
   needsWater,
+  MOOD_MAX,
 } from './people.js';
 import { Rng, randomSeed } from './rng.js';
 import { createRun, stepRun } from './run.js';
@@ -64,6 +75,7 @@ export class Game {
     this.rations = {};
     this.rationsTouched = false;
     this.momCaredToday = false;
+    this.talkedToday = false;
     this.nightReport = [];
     this.log = [];
     this.ending = null;
@@ -287,7 +299,11 @@ export class Game {
 
   startDay() {
     this.momCaredToday = false;
-    for (const p of this.people) p.treatedToday = false;
+    this.talkedToday = false;
+    for (const p of this.people) {
+      p.treatedToday = false;
+      p.talkedToday = false;
+    }
     this.resolveExpedition();
     if (this.ending) return;
     this.revivePath();
@@ -312,7 +328,7 @@ export class Game {
       return;
     }
     if (this.reviveAt == null) {
-      this.reviveAt = this.day + this.rng.schedule.int(4, 6);
+      this.reviveAt = this.day + this.rng.schedule.int(8, 15);
       return;
     }
     if (this.day < this.reviveAt) return;
@@ -445,6 +461,28 @@ export class Game {
     this.emit();
     return true;
   }
+  /** 마음 돌보기: 하루에 한 명과 이야기를 나눠 마음 상태를 한 단계 덜어 준다. */
+  talkReason(personId) {
+    if (this.talkedToday) return '오늘은 이미 이야기를 나눴다';
+    const p = this.person(personId);
+    if (!isHome(p) || p.isPlayer) return '이야기를 나눌 사람이 없다';
+    if (p.mood <= 0) return '마음이 안정되어 있다';
+    const listener = this.presentPeople().find((q) => q !== p && (q.isPlayer || isCapable(q)));
+    if (!listener) return '곁에서 들어 줄 사람이 없다';
+    return null;
+  }
+
+  talk(personId) {
+    if (this.phase !== 'home' || this.talkReason(personId)) return false;
+    const p = this.person(personId);
+    p.mood -= 1;
+    p.talkedToday = true;
+    this.talkedToday = true;
+    this.addLog(`${josa(p.name, '과/와')} 오래 이야기를 나눴다. 조금은 마음이 풀린 얼굴이다.`, 'good');
+    this.emit();
+    return true;
+  }
+
 
   // ── 사건 ─────────────────────────────────────
 
@@ -557,6 +595,13 @@ export class Game {
       mission: (id) => this.director.controller(id, this.day),
       /** 나쁜 결과가 나올 확률 p를 난이도에 맞춰 굴린다 */
       danger: (p) => this.rng.outcome.chance(Math.min(0.95, p * game.difficulty.harm)),
+      /** 마음 상태를 바꾼다(+ 나빠짐, - 나아짐). 주인공은 마음 상태가 없다. */
+      mood(p, delta) {
+        if (!p || p.isPlayer) return;
+        p.mood = Math.max(0, Math.min(MOOD_MAX, p.mood + delta));
+        if (delta < 0) p.talkedToday = true;
+      },
+      family: () => game.presentPeople().filter((p) => !p.isPlayer),
       /** 무작위 물품 n개를 얻어 재고에 넣고, 그 목록을 돌려준다 */
       loot(n) {
         const ids = rollItems({ rng: game.rng.outcome, count: n, needs: game.neededItems() });
@@ -621,6 +666,7 @@ export class Game {
       }
     }
 
+    this.updateMoods(present, report);
     this.checkDeaths(report);
     for (const line of report) this.addLog(line, 'night');
     this.nightReport = report;
@@ -634,7 +680,43 @@ export class Game {
     return true;
   }
 
+  /**
+   * 밤사이 마음 상태가 바뀐다. 오래 갇혀 지낼수록, 배고프거나 다쳤을수록 나빠지기 쉽다.
+   * 그날 이야기를 나눴거나 돌봄을 받은 사람은 나빠지지 않는다. 무너진 사람은 집을 나가 버릴 수 있다.
+   */
+  updateMoods(present, report) {
+    const rng = this.rng.outcome;
+    const garden = this.director.chains.garden;
+    const gardenActive = garden.opened && !['done', 'failed'].includes(garden.status);
+    for (const p of present) {
+      if (p.isPlayer || p.status !== 'home') continue;
+      const before = p.mood;
+      if (!p.talkedToday) {
+        let worse = 0.05 + Math.min(0.1, this.day * 0.0015);
+        if (needsFood(p) || needsWater(p)) worse += 0.08;
+        if (p.health >= 1) worse += 0.06;
+        if (this.flags.dog) worse -= 0.025;
+        if (gardenActive) worse -= 0.015;
+        if (rng.chance(Math.max(0.01, worse * this.difficulty.harm))) p.mood = Math.min(MOOD_MAX, p.mood + 1);
+        else if (p.mood > 0 && rng.chance(0.06)) p.mood -= 1;
+      }
+      if (p.mood > before && p.mood >= MOOD_LOW) {
+        const lines = {
+          2: `${josa(p.name, '은/는')} 요즘 말수가 부쩍 줄었다.`,
+          3: `${josa(p.name, '은/는')} 하루 종일 구석에 웅크린 채 아무것도 하려 하지 않는다.`,
+          4: `${josa(p.name, '이/가')} 밤새 누군가와 속삭이듯 혼잣말을 했다. 무서운 목소리가 들린다고 한다.`,
+        };
+        report.push(lines[p.mood]);
+      }
+      if (p.mood >= MOOD_BROKEN && !p.talkedToday && rng.chance(0.25 * this.difficulty.harm)) {
+        p.status = 'lost';
+        report.push(`새벽에 문이 열리는 소리가 났다. ${josa(p.name, '이/가')} 목소리를 따라 밖으로 나가 버렸다. 다시 돌아오지 않았다.`);
+      }
+    }
+  }
+
   checkDeaths(report = null) {
+    let playerCause = null;
     for (const p of this.presentPeople()) {
       let cause = null;
       if (p.health >= HEALTH_DEATH) cause = '부상';
@@ -646,8 +728,10 @@ export class Game {
       const line = `${josa(p.name, '이/가')} ${josa(cause, '으로/로')} 숨을 거뒀다.`;
       if (report) report.push(line);
       else this.addLog(line, 'bad');
-      if (p.isPlayer) this.setEnding('died', { cause });
+      if (p.isPlayer) playerCause = cause;
     }
+    // 같은 밤에 여럿이 숨지면 모두 기록한 뒤에 결말을 정한다(생존자 명단이 정확하도록).
+    if (playerCause) this.setEnding('died', { cause: playerCause });
   }
 
   // ── 승리 경로 ────────────────────────────────

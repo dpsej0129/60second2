@@ -14,7 +14,7 @@ test('떠돌이 개 보리: 들이면 습격·약탈 사건의 선택지가 늘�
   assert.equal(option(stageEvent(game, 'raid'), 'dog').disabled, true, '보리가 없으면 고를 수 없다');
   stageEvent(game, 'dog_stray');
   game.chooseOption('adopt');
-  assert.equal(game.stock.food, 39);
+  assert.equal(game.stock.food, 38, '통조림 ½캔');
   assert.equal(game.flags.dog, true);
   assert.equal(mission(game, 'dog').status, 'active');
   assert.equal(option(stageEvent(game, 'raid'), 'dog').disabled, false);
@@ -50,7 +50,7 @@ test('옥상 감자밭: 심고, 돌보고, 수확한다. 한 번은 다시 심�
   const game = isolate(homeGame({ seed: 52, stock: { food: 40, water: 40 } }));
   stageEvent(game, 'garden_find');
   game.chooseOption('plant');
-  assert.equal(game.stock.water, 39);
+  assert.equal(game.stock.water, 38, '물 ½병');
   assert.match(mission(game, 'garden').schedule, /싹 확인: \d+일차/);
 
   let view = untilChainEvent(game, 'garden');
@@ -105,20 +105,20 @@ test('좀비 FM 퀴즈: 정답을 맞혀야 비밀 창고 미션이 열린다', 
   }
 });
 
-test('내기꾼과 가위바위보: 이기면 식량 +2, 지면 -1, 비기면 그대로', () => {
+test('내기꾼과 가위바위보: 이기면 통조림 1캔, 지면 ½캔을 잃고, 비기면 그대로', () => {
   const results = { win: 0, lose: 0, tie: 0 };
   for (let seed = 1; seed <= 60; seed++) {
-    const game = homeGame({ seed, stock: { food: 5, water: 5 } });
+    const game = homeGame({ seed, stock: { food: 8, water: 8 } });
     const view = stageEvent(game, 'gambler');
     assert.equal(view.options.length, 4);
     game.chooseOption(['scissors', 'rock', 'paper'][seed % 3]);
-    const diff = game.stock.food - 5;
-    assert.ok([2, 0, -1].includes(diff), `식량 변화 ${diff}`);
-    results[diff === 2 ? 'win' : diff === 0 ? 'tie' : 'lose'] += 1;
+    const diff = game.stock.food - 8;
+    assert.ok([4, 0, -2].includes(diff), `식량 변화 ${diff}`);
+    results[diff === 4 ? 'win' : diff === 0 ? 'tie' : 'lose'] += 1;
     assert.match(game.event.outcome, /가위, 바위, 보!/);
   }
   assert.ok(results.win > 8 && results.lose > 8 && results.tie > 8, JSON.stringify(results));
-  const broke = homeGame({ seed: 2, stock: { food: 0 } });
+  const broke = homeGame({ seed: 2, stock: { food: 1 } });
   assert.equal(option(stageEvent(broke, 'gambler'), 'rock').disabled, true, '걸 식량이 없으면 할 수 없다');
 });
 
@@ -143,7 +143,7 @@ test('보급 상자·자판기·상표 없는 통조림: 가진 것에 따라 �
   const water = game.stock.water;
   stageEvent(game, 'vending');
   game.chooseOption('toolkit');
-  assert.equal(game.stock.water, water + 2);
+  assert.equal(game.stock.water, water + 8, '물 2병');
 
   view = stageEvent(game, 'mystery_cans');
   assert.equal(option(view, 'dog').disabled, true);
@@ -151,7 +151,7 @@ test('보급 상자·자판기·상표 없는 통조림: 가진 것에 따라 �
   const food = game.stock.food;
   stageEvent(game, 'mystery_cans');
   game.chooseOption('dog');
-  assert.equal(game.stock.food, food + 2, '보리가 상한 캔을 가려낸다');
+  assert.equal(game.stock.food, food + 8, '보리가 상한 캔을 가려내고 2캔을 챙긴다');
 });
 
 test('옆집 할머니: 도와드리면 보답이 오고, 통조림을 돌려드리면 탐사가 더 안전해진다', () => {
@@ -164,7 +164,7 @@ test('옆집 할머니: 도와드리면 보답이 오고, 통조림을 돌려드
   const risk = game.expeditionRisk('mom').lost;
   const food = game.stock.food;
   game.chooseOption('share');
-  assert.equal(game.stock.food, food + 1);
+  assert.equal(game.stock.food, food + 4, '통조림 1캔');
   assert.equal(game.stock.map, 1, '도로 지도를 받는다');
   assert.equal(game.flags.shortcut, true);
   assert.ok(game.expeditionRisk('mom').lost < risk, '탐사 위험이 줄어든다');

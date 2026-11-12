@@ -1,7 +1,7 @@
 // 집 안 장면(SVG): 집에 있는 사람과 재고 물품을 그림으로 보여 준다.
 // 재고가 생기면 선반에 물건이 나타나고, 다 쓰면 사라진다. 사람은 상태에 따라 모습이 바뀐다.
 import { HUNGER_NOTICE, HUNGER_WEAK, THIRST_NOTICE, THIRST_WEAK } from '../core/constants.js';
-import { RESOURCES } from '../core/items.js';
+import { RESOURCES, SERVINGS, formatAmount } from '../core/items.js';
 import { esc } from './dom.js';
 
 const FLOOR = 262;
@@ -54,13 +54,27 @@ const icon = {
 };
 
 /** 같은 물건을 count개(최대 max개) 늘어놓고, 수량 꼬리표를 붙인다. */
+/**
+ * 같은 물건을 늘어놓고 수량 꼬리표를 붙인다.
+ * 통조림·물은 '¼캔' 단위라 캔·병 수로 그리고, 딴 캔(남은 양이 4번이 안 되는 것)은 반쯤 비어 보이게 한다.
+ */
 function group(key, x, y, count, { max, step, label = true }) {
   if (count <= 0) return '';
-  const shown = Math.min(count, max);
+  const portions = RESOURCES[key].portions;
+  const units = portions ? Math.ceil(count / SERVINGS) : count;
+  const opened = portions ? count % SERVINGS : 0;
+  const shown = Math.min(units, max);
   let out = '';
-  for (let i = 0; i < shown; i++) out += icon[key](x + i * step, y);
+  for (let i = 0; i < shown; i++) {
+    const partial = opened && i === shown - 1 && units <= max;
+    const art = icon[key](x + i * step, y);
+    out += partial
+      ? `<g class="opened" data-left="${opened}" opacity="${(0.35 + (0.65 * opened) / SERVINGS).toFixed(2)}">${art}</g>`
+      : art;
+  }
   if (label) {
-    out += `<text class="shelter-count" x="${x}" y="${y + 14}">${esc(RESOURCES[key].name)} ${count}</text>`;
+    const text = portions || key === 'med' ? formatAmount(key, count) : `${RESOURCES[key].name} ${count}`;
+    out += `<text class="shelter-count" x="${x}" y="${y + 14}">${esc(text)}</text>`;
   }
   return out;
 }

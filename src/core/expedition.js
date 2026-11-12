@@ -28,8 +28,9 @@ export const NEED_BOOST = 3;
  * lost: 돌아오지 못할 확률, injury: 다쳐서 돌아올 확률
  */
 export function expeditionRisk(member, { withWeapon = false, count = 0, scale = 1 } = {}) {
-  let lost = 0.04 + 0.025 * count;
-  let injury = 0.15 + 0.04 * count;
+  // 탐사를 거듭할수록 위험해지지만, 100일 가까이 버티는 동안 여러 번 보낼 수 있도록 천천히 오른다.
+  let lost = Math.min(0.12, 0.03 + 0.004 * count);
+  let injury = Math.min(0.32, 0.12 + 0.008 * count);
   if (member.trait === 'guard') {
     lost *= 0.5;
     injury *= 0.6;
@@ -42,6 +43,7 @@ export function expeditionRisk(member, { withWeapon = false, count = 0, scale = 
     lost *= 1.6;
     injury *= 1.3;
   }
+  if ((member.mood ?? 0) >= 2) lost *= 1.4; // 울적한 사람은 위험을 잘 피하지 못한다
   lost *= scale;
   injury *= scale;
   return { lost: Math.min(0.6, lost), injury: Math.min(0.75, injury) };
@@ -69,7 +71,7 @@ export function rollItems({ rng, slots = EXPEDITION_CAPACITY, count = null, need
   return items;
 }
 
-/** 탐사에서 가져오는 것: 가방에 담아 온 물품 + 길에서 주운 식량·물 */
+/** 탐사에서 가져오는 것: 가방에 담아 온 물품 + 길에서 주운 식량·물(나눠 먹는 단위, ¼캔씩) */
 export function rollLoot({ rng, capacity = EXPEDITION_CAPACITY, found = [1, 2], needs = [] }) {
   const items = rollItems({ rng, slots: capacity, needs });
   const extra = { food: 0, water: 0 };

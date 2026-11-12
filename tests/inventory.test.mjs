@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { INVENTORY_SLOTS } from '../src/core/constants.js';
 import { Inventory, carryInfo } from '../src/core/inventory.js';
-import { ITEMS } from '../src/core/items.js';
+import { ITEMS, SERVINGS, formatAmount } from '../src/core/items.js';
 
 test('가방은 4칸이고 물품마다 차지하는 칸 수가 다르다', () => {
   assert.equal(INVENTORY_SLOTS, 4);
@@ -14,9 +14,14 @@ test('가방은 4칸이고 물품마다 차지하는 칸 수가 다르다', () =
   assert.equal(ITEMS.fuel.slots, 2);
 });
 
-test('식량·물은 챙긴 개수 그대로 재고가 된다(1개 = 1)', () => {
-  assert.deepEqual(ITEMS.canned.gives, { food: 1 });
-  assert.deepEqual(ITEMS.water.gives, { water: 1 });
+test('통조림 1캔·생수 1병은 4번 나눠 먹는다(60 Seconds!처럼)', () => {
+  assert.equal(SERVINGS, 4);
+  assert.deepEqual(ITEMS.canned.gives, { food: SERVINGS });
+  assert.deepEqual(ITEMS.water.gives, { water: SERVINGS });
+  assert.equal(formatAmount('food', 4), '통조림 1캔');
+  assert.equal(formatAmount('food', 6), '통조림 1½캔');
+  assert.equal(formatAmount('food', 3), '통조림 ¾캔');
+  assert.equal(formatAmount('water', 9), '물 2¼병');
   assert.deepEqual(ITEMS.battery.gives, { battery: 1 });
   assert.equal(ITEMS.ration, undefined, '묶음 식량은 없다');
   assert.equal(ITEMS.waterPack, undefined, '묶음 생수는 없다');

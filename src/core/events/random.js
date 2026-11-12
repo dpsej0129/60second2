@@ -1,5 +1,5 @@
 // 무작위 사건. when(game) 이 참인 사건 중에서 가중치(weight)로 뽑힌다.
-import { formatResources, RESOURCES } from '../items.js';
+import { SERVINGS, formatAmount, formatResources } from '../items.js';
 import { healthLabel } from '../people.js';
 import { josa } from '../text.js';
 import { HUNGER_NOTICE } from '../constants.js';
@@ -7,16 +7,21 @@ import { allOf, needCapable, needStock } from './helpers.js';
 
 const hasDog = (game) => (game.flags.dog ? null : '보리가 없다');
 
+const CAN = SERVINGS; // 통조림 1캔·물 1병 = 4번
 const TRADES = [
-  { give: { food: 1 }, get: { water: 2 } },
-  { give: { water: 1 }, get: { food: 2 } },
-  { give: { food: 2 }, get: { med: 1 } },
-  { give: { water: 2 }, get: { battery: 1 } },
-  { give: { food: 2 }, get: { flare: 1 } },
+  { give: { food: CAN }, get: { water: 2 * CAN } },
+  { give: { water: CAN }, get: { food: 2 * CAN } },
+  { give: { food: 2 * CAN }, get: { med: 1 } },
+  { give: { water: 2 * CAN }, get: { battery: 1 } },
+  { give: { food: 2 * CAN }, get: { flare: 1 } },
   { give: { med: 1 }, get: { fuel: 1 } },
-  { give: { food: 1, water: 1 }, get: { map: 1 } },
-  { give: { battery: 1 }, get: { food: 2 } },
+  { give: { food: CAN, water: CAN }, get: { map: 1 } },
+  { give: { battery: 1 }, get: { food: 2 * CAN } },
+  { give: { weapon: 1 }, get: { water: 3 * CAN } },
 ];
+
+/** take 결과를 '(통조림 -½캔)'처럼 */
+const minus = (key, n) => `${formatAmount(key, n).replace(/ /, ' -')}`;
 
 const pname = (game, id) => game.person(id).name;
 
@@ -26,7 +31,7 @@ export const RANDOM_EVENTS = [
     title: '좀비 습격',
     weight: 3,
     minDay: 2,
-    cooldown: 2,
+    cooldown: 4,
     text: () => '한밤중, 좀비 떼가 현관문과 창문을 두드린다. 문틀이 삐걱거리며 흔들린다!',
     options: [
       {
@@ -70,8 +75,8 @@ export const RANDOM_EVENTS = [
           if (!ctx.danger(0.2)) {
             return '보리가 미리 낌새를 채고 으르렁거린 덕에, 불을 끄고 가구로 문을 막을 시간이 있었다. 좀비들은 그냥 지나갔다.';
           }
-          const food = ctx.take('food', 1);
-          return `보리가 짖는 소리에 좀비가 더 몰려들었다. 겨우 버텼지만 부엌 창이 깨져 식량이 엉망이 됐다. (식량 -${food})`;
+          const food = ctx.take('food', 2);
+          return `보리가 짖는 소리에 좀비가 더 몰려들었다. 겨우 버텼지만 부엌 창이 깨져 식량이 엉망이 됐다. (${minus('food', food)})`;
         },
       },
       {
@@ -82,9 +87,9 @@ export const RANDOM_EVENTS = [
           if (!present.length || !ctx.danger(0.5)) return '숨소리조차 죽인 채 버텼다. 좀비들은 지나갔다.';
           const victim = ctx.rng.pick(present);
           ctx.injure(victim);
-          const food = ctx.take('food', 1);
-          const water = ctx.take('water', 1);
-          return `창문이 깨지고 좀비 한 마리가 들어왔다. 겨우 몰아냈지만 ${josa(victim.name, '이/가')} 다쳤고 물자가 엉망이 됐다. (${victim.name}: 부상, 식량 -${food}, 물 -${water})`;
+          const food = ctx.take('food', 2);
+          const water = ctx.take('water', 2);
+          return `창문이 깨지고 좀비 한 마리가 들어왔다. 겨우 몰아냈지만 ${josa(victim.name, '이/가')} 다쳤고 물자가 엉망이 됐다. (${victim.name}: 부상, ${minus('food', food)}, ${minus('water', water)})`;
         },
       },
     ],
@@ -100,11 +105,11 @@ export const RANDOM_EVENTS = [
       {
         id: 'give',
         label: '식량과 물을 조금 내준다',
-        cost: '식량 1 · 물 1',
+        cost: '통조림 1캔 · 물 1병',
         resolve(ctx) {
-          const food = ctx.take('food', 1);
-          const water = ctx.take('water', 1);
-          return `물자를 문틈으로 내밀었다. 약탈자들은 비웃으며 사라졌다. (식량 -${food}, 물 -${water})`;
+          const food = ctx.take('food', CAN);
+          const water = ctx.take('water', CAN);
+          return `물자를 문틈으로 내밀었다. 약탈자들은 비웃으며 사라졌다. (${minus('food', food)}, ${minus('water', water)})`;
         },
       },
       {
@@ -114,8 +119,8 @@ export const RANDOM_EVENTS = [
         resolve(ctx) {
           if (!ctx.danger(0.4)) return '방망이를 쥐고 버티자 약탈자들이 욕설을 내뱉으며 물러났다.';
           ctx.injure(ctx.person('me'));
-          const food = ctx.take('food', 1);
-          return `몸싸움 끝에 쫓아냈지만 다쳤고 식량을 빼앗겼다. (나: 부상, 식량 -${food})`;
+          const food = ctx.take('food', 2);
+          return `몸싸움 끝에 쫓아냈지만 다쳤고 식량을 빼앗겼다. (나: 부상, ${minus('food', food)})`;
         },
       },
       {
@@ -138,8 +143,8 @@ export const RANDOM_EVENTS = [
         check: hasDog,
         resolve(ctx) {
           if (!ctx.danger(0.25)) return '보리가 이를 드러내고 달려들자 약탈자들은 혼비백산 달아났다.';
-          const food = ctx.take('food', 1);
-          return `약탈자가 던진 고깃덩이에 보리가 한눈을 판 사이, 식량을 조금 빼앗겼다. (식량 -${food})`;
+          const food = ctx.take('food', 2);
+          return `약탈자가 던진 고깃덩이에 보리가 한눈을 판 사이, 식량을 조금 빼앗겼다. (${minus('food', food)})`;
         },
       },
     ],
@@ -196,31 +201,31 @@ export const RANDOM_EVENTS = [
   {
     id: 'rain',
     title: '폭우',
-    weight: 2,
+    weight: 2.5,
     minDay: 2,
-    cooldown: 3,
+    cooldown: 5,
     text: () => '밤새 장대비가 쏟아진다. 빗물을 모을 수 있을지도 모른다.',
     options: [
       {
         id: 'outside',
         label: '마당에 양동이를 내놓는다',
-        note: '물 +2 · 밖에 나가야 해서 위험하다',
+        note: '물 1½병 · 밖에 나가야 해서 위험하다',
         resolve(ctx) {
-          ctx.give('water', 2);
+          ctx.give('water', 6);
           if (ctx.danger(0.25)) {
             ctx.injure(ctx.person('me'));
-            return '빗물을 모았지만 돌아오는 길에 좀비에게 할퀴었다. (물 +2, 나: 부상)';
+            return '빗물을 모았지만 돌아오는 길에 좀비에게 할퀴었다. (물 +1½병, 나: 부상)';
           }
-          return '빗소리에 발소리를 숨겨 양동이를 내놓았다. (물 +2)';
+          return '빗소리에 발소리를 숨겨 양동이를 내놓았다. (물 +1½병)';
         },
       },
       {
         id: 'window',
         label: '창문 틈으로만 받는다',
-        note: '물 +1',
+        note: '물 ½병',
         resolve(ctx) {
-          ctx.give('water', 1);
-          return '창문 틈으로 냄비를 내밀어 빗물을 조금 받았다. (물 +1)';
+          ctx.give('water', 2);
+          return '창문 틈으로 냄비를 내밀어 빗물을 조금 받았다. (물 +½병)';
         },
       },
     ],
@@ -228,9 +233,9 @@ export const RANDOM_EVENTS = [
   {
     id: 'trade',
     title: '떠돌이 생존자의 거래',
-    weight: 2,
+    weight: 2.5,
     minDay: 2,
-    cooldown: 3,
+    cooldown: 5,
     setup: (game, rng) => ({ offer: rng.int(0, TRADES.length - 1) }),
     text(game, params) {
       const t = TRADES[params.offer];
@@ -243,7 +248,7 @@ export const RANDOM_EVENTS = [
         cost: (game, params) => formatResources(TRADES[params.offer].give),
         check(game, params) {
           for (const [key, n] of Object.entries(TRADES[params.offer].give)) {
-            if (game.stock[key] < n) return `${RESOURCES[key].name} ${n} 필요 (보유 ${game.stock[key]})`;
+            if (game.stock[key] < n) return `${formatAmount(key, n)} 필요 (남은 것 ${formatAmount(key, game.stock[key])})`;
           }
           return null;
         },
@@ -267,16 +272,16 @@ export const RANDOM_EVENTS = [
     weight: 1,
     minDay: 3,
     cooldown: 4,
-    when: (game) => game.stock.food >= 2,
+    when: (game) => game.stock.food >= CAN,
     text: () => '창고에서 바스락 소리가 난다. 쥐 떼가 식량을 갉아먹고 있다!',
     options: [
       {
         id: 'discard',
         label: '갉아먹힌 식량을 버린다',
-        cost: '식량 1',
+        cost: '통조림 1캔',
         resolve(ctx) {
-          const food = ctx.take('food', 1);
-          return `쥐가 손댄 식량을 아깝지만 버렸다. (식량 -${food})`;
+          const food = ctx.take('food', CAN);
+          return `쥐가 손댄 식량을 아깝지만 버렸다. (${minus('food', food)})`;
         },
       },
       {
@@ -306,12 +311,12 @@ export const RANDOM_EVENTS = [
       {
         id: 'give',
         label: '물을 나눠 준다',
-        cost: '물 1',
+        cost: '물 ¼병',
         check: needStock('water'),
         resolve(ctx) {
           ctx.take('water', 1);
           ctx.give('battery', 1);
-          return '아이는 물을 단숨에 마시더니, 고맙다며 주머니에서 건전지 하나를 꺼내 주고 사라졌다. (물 -1, 건전지 +1)';
+          return '아이는 물을 단숨에 마시더니, 고맙다며 주머니에서 건전지 하나를 꺼내 주고 사라졌다. (물 -¼병, 건전지 +1)';
         },
       },
       {
@@ -373,13 +378,13 @@ export const RANDOM_EVENTS = [
       {
         id: 'allow',
         label: '나눠 먹게 둔다',
-        cost: '식량 1',
+        cost: '통조림 ¼캔',
         check: needStock('food'),
         resolve(ctx) {
           const p = ctx.person(ctx.params.member);
           ctx.take('food', 1);
           p.hunger = 0;
-          return `${p.name}에게 식량을 나눠 주었다. (식량 -1, ${p.name}: 배부름)`;
+          return `${p.name}에게 식량을 나눠 주었다. (통조림 -¼캔, ${p.name}: 배부름)`;
         },
       },
       {

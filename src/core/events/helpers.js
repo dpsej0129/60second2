@@ -1,5 +1,5 @@
 // 사건 선택지의 조건 검사 도우미. 검사 함수는 (game, params, chain) → null(가능) | 불가 사유 문자열.
-import { RESOURCES } from '../items.js';
+import { formatAmount } from '../items.js';
 import { defOf, incapableReason, isCapable } from '../people.js';
 import { josa } from '../text.js';
 
@@ -7,8 +7,7 @@ export function needStock(key, n = 1) {
   return (game) => {
     const have = game.stock[key];
     if (have >= n) return null;
-    const { name, unit } = RESOURCES[key];
-    return `${name} ${n}${unit} 필요 (보유 ${have})`;
+    return `${formatAmount(key, n)} 필요 (남은 것 ${formatAmount(key, have)})`;
   };
 }
 

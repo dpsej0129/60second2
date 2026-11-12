@@ -1,7 +1,9 @@
 // 미션: 탈출 경로와는 별개로 생존을 돕는 곁가지 사건들.
 //  - MISSION_EVENTS: 무작위로 일어나는 사건(단발 미션, 또는 여러 날 이어지는 미션의 시작)
 //  - MISSIONS: 수락하면 며칠에 걸쳐 이어지는 미션(연쇄 사건). 홈 화면 '미션' 칸에 진행 상황이 나온다.
-import { ITEMS } from '../items.js';
+import { ITEMS, SERVINGS } from '../items.js';
+
+const CAN = SERVINGS;
 import { healthLabel } from '../people.js';
 import { josa } from '../text.js';
 import { allOf, canTransmit, needCapable, needStock } from './helpers.js';
@@ -52,11 +54,11 @@ function playHand(mine) {
     const call = `"가위, 바위, 보!" 나는 ${HANDS[mine]}, 사내는 ${HANDS[theirs]}.`;
     if (mine === theirs) return `${call} 비겼다. "쳇, 다음에 또 보자고." 사내는 모자를 고쳐 쓰고 사라졌다.`;
     if (BEATS[mine] === theirs) {
-      ctx.give('food', 2);
-      return `${call} 이겼다! 사내는 혀를 차며 통조림 두 개를 문틈으로 밀어 넣었다. (식량 +2)`;
+      ctx.give('food', CAN);
+      return `${call} 이겼다! 사내는 혀를 차며 통조림 한 캔을 문틈으로 밀어 넣었다. (통조림 +1캔)`;
     }
-    ctx.take('food', 1);
-    return `${call} 졌다. 사내는 휘파람을 불며 통조림을 챙겨 갔다. (식량 -1)`;
+    ctx.take('food', 2);
+    return `${call} 졌다. 사내는 휘파람을 불며 반쯤 남은 통조림을 챙겨 갔다. (통조림 -½캔)`;
   };
 }
 
@@ -75,14 +77,14 @@ export const MISSION_EVENTS = [
       {
         id: 'adopt',
         label: '식량을 나눠 주고 집에 들인다',
-        cost: '식량 1',
+        cost: '통조림 ½캔',
         note: '가끔 밥을 줘야 한다',
-        check: needStock('food'),
+        check: needStock('food', 2),
         resolve(ctx) {
-          ctx.take('food', 1);
+          ctx.take('food', 2);
           ctx.game.flags.dog = true;
-          ctx.mission('dog').begin([2, 4]);
-          return '보리는 통조림을 순식간에 비우더니 현관 앞에 자리를 잡았다. 이제 낯선 기척이 나면 가장 먼저 알아챌 것이다. (식량 -1)';
+          ctx.mission('dog').begin([3, 6]);
+          return '보리는 통조림을 순식간에 비우더니 현관 앞에 자리를 잡았다. 이제 낯선 기척이 나면 가장 먼저 알아챌 것이다. (통조림 -½캔)';
         },
       },
       { id: 'shoo', label: '쫓아낸다', resolve: () => '보리는 몇 번 뒤돌아보다 골목 끝으로 사라졌다.' },
@@ -99,22 +101,22 @@ export const MISSION_EVENTS = [
       {
         id: 'plant',
         label: '옥상에 심는다',
-        cost: '물 1',
+        cost: '물 ½병',
         note: '며칠 뒤 수확할 수 있다',
-        check: needStock('water'),
+        check: needStock('water', 2),
         resolve(ctx) {
-          ctx.take('water', 1);
-          const day = ctx.mission('garden').begin([2, 3]);
-          return `스티로폼 상자에 흙을 채우고 감자를 심었다. ${day}일차쯤 싹이 올라올 것이다. (물 -1)`;
+          ctx.take('water', 2);
+          const day = ctx.mission('garden').begin([4, 6]);
+          return `스티로폼 상자에 흙을 채우고 감자를 심었다. ${day}일차쯤 싹이 올라올 것이다. (물 -½병)`;
         },
       },
       {
         id: 'eat',
         label: '그냥 삶아 먹는다',
-        note: '식량 +1',
+        note: '두 끼 거리',
         resolve(ctx) {
-          ctx.give('food', 1);
-          return '싹을 도려내고 삶으니 한 끼는 됐다. (식량 +1)';
+          ctx.give('food', 2);
+          return '싹을 도려내고 삶으니 두 끼 거리는 됐다. (통조림 ½캔만큼)';
         },
       },
       { id: 'leave', label: '내버려 둔다', resolve: () => '농사지을 여유는 없다. 자루를 도로 덮어 두었다.' },
@@ -140,7 +142,7 @@ export const MISSION_EVENTS = [
           ctx.take('battery', 1);
           const quiz = QUIZ[ctx.params.quiz];
           if (i === quiz.answer) {
-            const day = ctx.mission('dj').begin([1, 2]);
+            const day = ctx.mission('dj').begin([2, 4]);
             return `"딩동댕~ 정답!" DJ가 호들갑을 떨며 비밀 창고 위치를 불러 줬다. ${day}일차에 가 보기로 했다. (건전지 -1)`;
           }
           return `"땡! 아쉽네요~ 정답은 '${quiz.options[quiz.answer]}'! ${quiz.why}" 방송은 다음 곡으로 넘어갔다. (건전지 -1)`;
@@ -158,8 +160,8 @@ export const MISSION_EVENTS = [
     title: '보급 상자 낙하',
     weight: 2,
     minDay: 3,
-    cooldown: 5,
-    maxCount: 2,
+    cooldown: 12,
+    maxCount: 4,
     text: () =>
       '굉음과 함께 수송기가 지나가더니, 낙하산을 단 주황색 상자가 골목 끝 놀이터에 떨어졌다. 좀비들도 그쪽으로 어슬렁어슬렁 모여든다.',
     options: [
@@ -210,16 +212,16 @@ export const MISSION_EVENTS = [
     title: '내기꾼',
     weight: 2,
     minDay: 2,
-    cooldown: 4,
-    when: (game) => game.stock.food >= 1,
+    cooldown: 8,
+    when: (game) => game.stock.food >= 2,
     text: () =>
-      '문틈으로 중절모를 쓴 사내가 히죽 웃는다. "심심하지? 가위바위보 한 판 하자고. 통조림 하나 걸고, 자네가 이기면 내가 두 개 주지."',
+      '문틈으로 중절모를 쓴 사내가 히죽 웃는다. "심심하지? 가위바위보 한 판 하자고. 통조림 반 캔 걸고, 자네가 이기면 내가 새 걸로 한 캔 주지."',
     options: [
       ...Object.keys(HANDS).map((hand) => ({
         id: hand,
         label: `${HANDS[hand]}를 낸다`,
-        cost: '지면 식량 1',
-        check: needStock('food'),
+        cost: '지면 통조림 ½캔',
+        check: needStock('food', 2),
         resolve: playHand(hand),
       })),
       { id: 'decline', label: '상대하지 않는다', resolve: () => '"재미없는 친구로군." 사내는 카드 한 벌을 흔들며 사라졌다.' },
@@ -238,9 +240,9 @@ export const MISSION_EVENTS = [
         label: '공구 상자로 조용히 뜯는다',
         check: needStock('toolkit'),
         resolve(ctx) {
-          ctx.give('water', 2);
-          ctx.give('food', 1);
-          return '경첩을 풀어 문을 통째로 떼어 냈다. 소리 하나 없이 깔끔했다. (물 +2, 식량 +1)';
+          ctx.give('water', 2 * CAN);
+          ctx.give('food', CAN);
+          return '경첩을 풀어 문을 통째로 떼어 냈다. 소리 하나 없이 깔끔했다. (물 +2병, 통조림 +1캔)';
         },
       },
       {
@@ -249,15 +251,15 @@ export const MISSION_EVENTS = [
         note: '소리가 크게 난다',
         check: needStock('weapon'),
         resolve(ctx) {
-          ctx.give('water', 2);
-          ctx.give('food', 1);
+          ctx.give('water', 2 * CAN);
+          ctx.give('food', CAN);
           const present = ctx.present();
           if (present.length && ctx.danger(0.4)) {
             const victim = ctx.rng.pick(present);
             ctx.injure(victim);
-            return `유리 깨지는 소리에 좀비가 몰려왔다. 물건은 챙겼지만 ${josa(victim.name, '이/가')} 다쳤다. (물 +2, 식량 +1, ${victim.name}: ${healthLabel(victim.health).text})`;
+            return `유리 깨지는 소리에 좀비가 몰려왔다. 물건은 챙겼지만 ${josa(victim.name, '이/가')} 다쳤다. (물 +2병, 통조림 +1캔, ${victim.name}: ${healthLabel(victim.health).text})`;
           }
-          return '와장창! 재빨리 쓸어 담고 돌아왔다. (물 +2, 식량 +1)';
+          return '와장창! 재빨리 쓸어 담고 돌아왔다. (물 +2병, 통조림 +1캔)';
         },
       },
       {
@@ -265,8 +267,8 @@ export const MISSION_EVENTS = [
         label: '주머니 속 동전을 넣어 본다',
         resolve(ctx) {
           if (ctx.rng.chance(0.25)) {
-            ctx.give('water', 1);
-            return '덜컹! 놀랍게도 생수 한 병이 굴러 나왔다. 전기가 남아 있었던 모양이다. (물 +1)';
+            ctx.give('water', CAN);
+            return '덜컹! 놀랍게도 생수 한 병이 굴러 나왔다. 전기가 남아 있었던 모양이다. (물 +1병)';
           }
           return '동전만 삼키고 조용하다. 돈은 이제 아무 쓸모가 없다.';
         },
@@ -279,8 +281,8 @@ export const MISSION_EVENTS = [
     title: '상표 없는 통조림',
     weight: 2,
     minDay: 2,
-    cooldown: 5,
-    maxCount: 2,
+    cooldown: 12,
+    maxCount: 4,
     text: () => '다락방 상자에서 상표가 벗겨진 통조림 세 개가 나왔다. 흔들어 보니 묵직하다.',
     options: [
       {
@@ -290,12 +292,12 @@ export const MISSION_EVENTS = [
         resolve(ctx) {
           const roll = ctx.rng.next();
           if (roll < 0.4) {
-            ctx.give('food', 3);
-            return '복숭아 통조림이다! 달콤한 국물까지 남김없이 나눠 먹었다. (식량 +3)';
+            ctx.give('food', 3 * CAN);
+            return '복숭아 통조림이다! 세 캔 모두. 오늘은 잔칫날이다. (통조림 +3캔)';
           }
           if (roll < 0.75 || !ctx.present().length) {
-            ctx.give('food', 2);
-            return `개 사료였다. …의외로 먹을 만하다.${ctx.game.flags.dog ? ' 보리가 제일 좋아했다.' : ''} (식량 +2)`;
+            ctx.give('food', 2 * CAN);
+            return `개 사료였다. …의외로 먹을 만하다.${ctx.game.flags.dog ? ' 보리가 제일 좋아했다.' : ''} (통조림 +2캔)`;
           }
           const victim = ctx.rng.pick(ctx.present());
           ctx.injure(victim);
@@ -308,8 +310,8 @@ export const MISSION_EVENTS = [
         label: '보리에게 먼저 냄새를 맡게 한다',
         check: hasDog,
         resolve(ctx) {
-          ctx.give('food', 2);
-          return '보리가 코를 킁킁대더니 하나에는 고개를 홱 돌렸다. 그 캔은 버리고 나머지 둘만 먹었다. (식량 +2)';
+          ctx.give('food', 2 * CAN);
+          return '보리가 코를 킁킁대더니 하나에는 고개를 홱 돌렸다. 그 캔은 버리고 나머지 둘만 챙겼다. (통조림 +2캔)';
         },
       },
       { id: 'toss', label: '찜찜하니 버린다', resolve: () => '탈이 나는 것보다는 낫다.' },
@@ -331,7 +333,7 @@ export const MISSION_EVENTS = [
         check: needStock('med'),
         resolve(ctx) {
           ctx.take('med', 1);
-          ctx.mission('granny').begin([2, 3]);
+          ctx.mission('granny').begin([3, 5]);
           return '벽 틈으로 약을 밀어 넣었다. "고맙네, 정말 고맙네…" (구급약 -1)';
         },
       },
@@ -341,7 +343,7 @@ export const MISSION_EVENTS = [
         label: '엄마가 벽 너머로 증상을 듣고 돌봐 드린다',
         check: needCapable('mom'),
         resolve(ctx) {
-          ctx.mission('granny').begin([2, 3]);
+          ctx.mission('granny').begin([3, 5]);
           return '엄마가 한참 이야기를 듣더니, 집에 있는 것으로 할 수 있는 처치를 차근차근 일러 드렸다. 할머니의 목소리가 한결 밝아졌다.';
         },
       },
@@ -368,7 +370,7 @@ const DOG = {
           label: '함께 파 본다',
           resolve(ctx) {
             const ids = ctx.loot(2);
-            ctx.chain.advance([2, 3]);
+            ctx.chain.advance([4, 6]);
             return `누군가 묻어 둔 비상 상자가 나왔다! 얻은 것: ${names(ids)}`;
           },
         },
@@ -376,7 +378,7 @@ const DOG = {
           id: 'stop',
           label: '시끄러우니 말린다',
           resolve(ctx) {
-            ctx.chain.advance([2, 3]);
+            ctx.chain.advance([4, 6]);
             return '보리는 아쉬운 듯 낑낑대며 물러났다.';
           },
         },
@@ -390,12 +392,12 @@ const DOG = {
         {
           id: 'feed',
           label: '식량을 나눠 준다',
-          cost: '식량 1',
+          cost: '통조림 ¼캔',
           check: needStock('food'),
           resolve(ctx) {
             ctx.take('food', 1);
-            ctx.chain.retry([3, 4]);
-            return '보리가 꼬리를 흔들며 그릇을 싹 비웠다. (식량 -1)';
+            ctx.chain.retry([4, 6]);
+            return '보리가 꼬리를 흔들며 그릇을 싹 비웠다. (통조림 -¼캔)';
           },
         },
         {
@@ -423,7 +425,7 @@ const gardenYield = (chain) => 2 + chain.data.care;
 
 function tendGarden(ctx, care, lead) {
   ctx.chain.data.care += care;
-  const day = ctx.chain.advance([2, 3]);
+  const day = ctx.chain.advance([5, 8]);
   return `${lead} ${day}일차쯤 캘 수 있겠다.`;
 }
 
@@ -449,11 +451,11 @@ const GARDEN = {
         {
           id: 'water',
           label: '물을 주고 그물을 덮는다',
-          cost: '물 1',
-          check: needStock('water'),
+          cost: '물 ½병',
+          check: needStock('water', 2),
           resolve(ctx) {
-            ctx.take('water', 1);
-            return tendGarden(ctx, 1, '물을 듬뿍 주고 빨래 건조망을 덮어 두었다. (물 -1)');
+            ctx.take('water', 2);
+            return tendGarden(ctx, 1, '물을 듬뿍 주고 빨래 건조망을 덮어 두었다. (물 -½병)');
           },
         },
         {
@@ -475,7 +477,7 @@ const GARDEN = {
             const n = gardenYield(ctx.chain.state);
             ctx.give('food', n);
             ctx.chain.complete(`감자 ${n}알을 수확했다.`);
-            return `흙투성이 감자 ${n}알을 캤다. 오랜만에 따뜻한 음식을 먹었다. (식량 +${n})`;
+            return `흙투성이 감자 ${n}알을 캤다. 한 알이 한 끼다. 오랜만에 따뜻한 음식을 먹었다.`;
           },
         },
         {
@@ -489,8 +491,8 @@ const GARDEN = {
             ctx.give('food', n);
             data.cycles += 1;
             data.care = 0;
-            const day = ctx.chain.goto(0, [2, 3]);
-            return `감자 ${n}알을 캐고, 가장 작은 것은 다시 심었다. ${day}일차쯤 싹이 올라올 것이다. (식량 +${n})`;
+            const day = ctx.chain.goto(0, [4, 6]);
+            return `감자 ${n}알을 캐고, 가장 작은 것은 다시 심었다. ${day}일차쯤 싹이 올라올 것이다.`;
           },
         },
       ],
@@ -563,22 +565,22 @@ const GRANNY = {
           id: 'accept',
           label: '고맙게 받는다',
           resolve(ctx) {
-            ctx.give('food', 2);
+            ctx.give('food', 2 * CAN);
             const gift = grannyGift(ctx);
             ctx.chain.complete(`할머니에게 통조림과 ${gift}를 받았다.`);
-            return `보따리를 풀었다. (식량 +2, ${gift} +1)`;
+            return `보따리를 풀었다. (통조림 +2캔, ${gift} +1)`;
           },
         },
         {
           id: 'share',
           label: '통조림 하나는 도로 밀어 드린다',
-          note: '식량 +1만 받는다',
+          note: '통조림 1캔만 받는다',
           resolve(ctx) {
-            ctx.give('food', 1);
+            ctx.give('food', CAN);
             const gift = grannyGift(ctx);
             ctx.game.flags.shortcut = true;
             ctx.chain.complete(`할머니가 좀비가 드문 뒷골목을 알려 주었다. 탐사가 조금 더 안전해졌다.`);
-            return `"할머니도 드셔야죠." 한참 말이 없던 할머니가, 동네 뒷골목 중 좀비가 드문 길을 하나하나 짚어 주었다. 앞으로 탐사가 조금 더 안전해진다. (식량 +1, ${gift} +1)`;
+            return `"할머니도 드셔야죠." 한참 말이 없던 할머니가, 동네 뒷골목 중 좀비가 드문 길을 하나하나 짚어 주었다. 앞으로 탐사가 조금 더 안전해진다. (통조림 +1캔, ${gift} +1)`;
           },
         },
       ],

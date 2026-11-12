@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PICKUP_SECONDS, PLAYER_SPEED, RUN_SECONDS, SIM_STEP } from '../src/core/constants.js';
 import { Game } from '../src/core/game.js';
-import { ITEMS } from '../src/core/items.js';
+import { ITEMS, SERVINGS } from '../src/core/items.js';
 import { pickupPreview, spawnZombie } from '../src/core/run.js';
 import { HOME_DOOR, HOME_ZONE, MART_DOORS, SHELVES, dist, inMart } from '../src/core/world.js';
 import { RunBot, standPoint } from './helpers/bot.mjs';
@@ -122,8 +122,8 @@ test('집 앞에 물품을 내려놓아도 탐색은 계속되고, 60초 안에 
   assert.equal(game.phase, 'home');
   assert.equal(game.stock.radio, 1);
   assert.equal(game.stock.battery, 1);
-  assert.equal(game.stock.water, 1, '생수 1개를 챙겼으면 물 1');
-  assert.equal(game.stock.food, 1, '통조림 1개를 챙겼으면 식량 1');
+  assert.equal(game.stock.water, SERVINGS, '생수 1병을 챙겼으면 물 1병(4번)');
+  assert.equal(game.stock.food, SERVINGS, '통조림 1캔을 챙겼으면 1캔(4번)');
 });
 
 test('가족도 칸을 차지하는 짐처럼 데려와야 하고, 데려오지 못한 가족은 남겨진다', () => {
@@ -240,7 +240,7 @@ test('가족을 포기하면 마트를 세 번 왕복할 수 있다(좀비 없�
   assert.equal(result.outcome, 'home');
   assert.ok(result.items.length >= 12, `물품 ${result.items.length}개`);
   assert.equal(result.family.length, 0);
-  assert.equal(game.stock.water + game.stock.food, result.items.length, '챙긴 개수 그대로 재고가 된다');
+  assert.equal(game.stock.water + game.stock.food, result.items.length * SERVINGS, '챙긴 캔·병 수 그대로 재고가 된다');
 });
 
 test('방향키 하나로 선반 모서리를 스치며 지나가도 걸리지 않는다', () => {

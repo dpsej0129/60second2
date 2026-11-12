@@ -1,6 +1,10 @@
 // 승리 경로가 되는 연쇄 사건. 각 단계는 앞 단계가 끝난 뒤에야 무작위 날짜로 예약된다.
 // 모든 단계에는 항상 고를 수 있는 선택지가 있고, 그 선택지는 반드시 다음 일정(재시도·진행·종료)을 정한다.
+import { SERVINGS, formatAmount } from '../items.js';
 import { isCapable } from '../people.js';
+
+const CAN = SERVINGS;
+const tribute = (d) => `${formatAmount('food', d.food)}, ${formatAmount('water', d.water)}`;
 import { allOf, canTransmit, criticalPeople, needCapable, needStock } from './helpers.js';
 
 const OPENER_RETRIES = { rescue: 2, group: 1, car: 1 };
@@ -13,7 +17,7 @@ function respondToRescue(ctx, via) {
   ctx.take('battery', 1);
   ctx.chain.open();
   ctx.chain.data.via = via;
-  const day = ctx.chain.advance([2, 3]);
+  const day = ctx.chain.advance([8, 14]);
   const lead =
     via === 'sis'
       ? '동생이 라디오 뒷판을 뜯어 송신기로 개조했다. 지직거리는 잡음 끝에 목소리가 돌아왔다.'
@@ -25,7 +29,7 @@ const RESCUE = {
   id: 'rescue',
   icon: '🚁',
   title: '군 구조 헬기',
-  openWindow: [2, 5],
+  openWindow: [14, 32],
   initData: () => ({ via: null, arrivalDay: null, missed: 0 }),
   stages: [
     {
@@ -36,7 +40,6 @@ const RESCUE = {
           '거실의 낡은 라디오에서 잡음 섞인 방송이 흘러나온다. "여기는 국군 구조대. 생존자는 이 주파수로 응답하라. 반복한다…"';
         return chain.retries > 0 ? `같은 주파수에서 구조 방송이 다시 들린다. (${chain.retries + 1}번째) ${base}` : base;
       },
-      hint: '응답하려면 무전기(또는 라디오를 개조할 동생)와 건전지가 필요하다.',
       options: [
         {
           id: 'radio',
@@ -62,7 +65,7 @@ const RESCUE = {
               : '마지막 방송이다',
           resolve(ctx) {
             if (ctx.chain.state.retries < OPENER_RETRIES.rescue) {
-              ctx.chain.retry([2, 4]);
+              ctx.chain.retry([10, 18]);
               return '방송이 잡음 속으로 사라졌다. 언젠가 다시 들릴지도 모른다.';
             }
             ctx.chain.fail('구조 방송이 더 이상 들리지 않는다.');
@@ -75,7 +78,6 @@ const RESCUE = {
       id: 'rescue_coords',
       title: '구조대 교신',
       text: () => '약속한 시간, 무전기에서 구조대의 목소리가 들린다. "착륙 지점을 확정하겠다. 현재 위치를 보고하라."',
-      hint: '위치를 보고하려면 건전지 1개와 송신 수단(무전기 또는 동생)이 필요하다.',
       options: [
         {
           id: 'report',
@@ -84,7 +86,7 @@ const RESCUE = {
           check: allOf(needStock('battery'), canTransmit),
           resolve(ctx) {
             ctx.take('battery', 1);
-            const day = ctx.chain.advance([2, 3]);
+            const day = ctx.chain.advance([8, 14]);
             ctx.chain.data.arrivalDay = day;
             return `"확인했다. ${day}일차에 헬기가 옥상에 도착한다. 신호탄으로 위치를 알려라. 걷지 못하는 사람은 태울 수 없다." (건전지 -1)`;
           },
@@ -92,9 +94,9 @@ const RESCUE = {
         {
           id: 'later',
           label: '지금은 교신할 수 없다',
-          note: '구조대가 하루 이틀 뒤 다시 연락한다',
+          note: '구조대가 며칠 뒤 다시 연락할지도 모른다',
           resolve(ctx) {
-            const day = ctx.chain.retry([1, 2]);
+            const day = ctx.chain.retry([3, 6]);
             return `응답하지 못하자 교신이 끊겼다. 끊기기 직전 "${day}일차에 다시 연락하겠다"는 말이 들렸다.`;
           },
         },
@@ -105,7 +107,6 @@ const RESCUE = {
       title: '구조 헬기 도착',
       text: (game, params, chain) =>
         `멀리서 프로펠러 소리가 들린다. 구조 헬기가 상공을 맴돌며 신호를 찾고 있다!${chain.data.missed ? ' 구조대가 말한 마지막 기회다.' : ''}`,
-      hint: '신호탄이 있어야 하고, 걷지 못하는 중상자는 태울 수 없다.',
       options: [
         {
           id: 'flare',
@@ -142,12 +143,12 @@ const RESCUE = {
         {
           id: 'pass',
           label: '이번에는 헬기를 보낸다',
-          note: (game, params, chain) => (chain.data.missed ? '구조 경로가 닫힌다' : '구조대가 한 번 더 온다'),
+          note: (game, params, chain) => (chain.data.missed ? '다시는 오지 않을 것이다' : '헬기가 위치를 찾지 못할 것이다'),
           resolve(ctx) {
             const data = ctx.chain.data;
             if (data.missed < 1) {
               data.missed += 1;
-              const day = ctx.chain.retry([2, 2]);
+              const day = ctx.chain.retry([3, 3]);
               data.arrivalDay = day;
               return `헬기는 위치를 찾지 못하고 돌아갔다. 무전으로 짧은 연락이 왔다. "${day}일차, 마지막으로 한 번 더 오겠다."`;
             }
@@ -201,23 +202,23 @@ const RESCUE = {
 function openGroup(ctx, food, water, lead) {
   ctx.chain.open();
   Object.assign(ctx.chain.data, { food, water });
-  const day = ctx.chain.advance([2, 4]);
-  return `${lead} "우리 거점은 담장도 있고 경비도 선다. 대신 빈손으로는 받아 줄 수 없다. 합류하는 날 식량 ${food}, 물 ${water}. 그게 조건이다. ${day}일차에 다시 들르겠다."`;
+  const day = ctx.chain.advance([8, 14]);
+  return `${lead} "우리 거점은 담장도 있고 경비도 선다. 대신 빈손으로는 받아 줄 수 없다. 합류하는 날 ${tribute({ food, water })}. 그게 조건이다. ${day}일차에 다시 들르겠다."`;
 }
 
 function finishTrustTest(ctx, lead) {
   const d = ctx.chain.data;
-  const day = ctx.chain.advance([2, 3]);
+  const day = ctx.chain.advance([8, 14]);
   d.joinDay = day;
-  return `${lead} "${day}일차에 데리러 오겠다. 식량 ${d.food}, 물 ${d.water}. 잊지 마라."`;
+  return `${lead} "${day}일차에 데리러 오겠다. ${tribute(d)}. 잊지 마라."`;
 }
 
 const GROUP = {
   id: 'group',
   icon: '🏚️',
   title: '강변 거점 합류',
-  openWindow: [3, 6],
-  initData: () => ({ food: 3, water: 3, trust: null, joinDay: null, delays: 0 }),
+  openWindow: [20, 40],
+  initData: () => ({ food: 3 * CAN, water: 3 * CAN, trust: null, joinDay: null, delays: 0 }),
   stages: [
     {
       id: 'group_scout',
@@ -230,16 +231,14 @@ const GROUP = {
         {
           id: 'talk',
           label: '문을 열고 교섭한다',
-          note: '합류 조건: 식량 3 · 물 3',
-          resolve: (ctx) => openGroup(ctx, 3, 3, '상대는 총구를 내리고 조건을 말했다.'),
+          resolve: (ctx) => openGroup(ctx, 3 * CAN, 3 * CAN, '상대는 총구를 내리고 조건을 말했다.'),
         },
         {
           id: 'dad',
           who: 'dad',
           label: '아빠가 문 앞에서 경계하며 교섭한다',
-          note: '더 나은 조건: 식량 2 · 물 2',
           check: needCapable('dad'),
-          resolve: (ctx) => openGroup(ctx, 2, 2, '아빠의 단호한 태도에 상대가 한발 물러섰다.'),
+          resolve: (ctx) => openGroup(ctx, 2 * CAN, 2 * CAN, '아빠의 단호한 태도에 상대가 한발 물러섰다.'),
         },
         {
           id: 'refuse',
@@ -248,7 +247,7 @@ const GROUP = {
             chain.retries < OPENER_RETRIES.group ? '한 번 더 찾아올지도 모른다' : '다시는 오지 않을 것이다',
           resolve(ctx) {
             if (ctx.chain.state.retries < OPENER_RETRIES.group) {
-              ctx.chain.retry([3, 5]);
+              ctx.chain.retry([10, 18]);
               return '"생각이 바뀌면…" 발소리가 멀어졌다.';
             }
             ctx.chain.fail('거점 사람들은 더 이상 찾아오지 않는다.');
@@ -287,11 +286,10 @@ const GROUP = {
         {
           id: 'refuse',
           label: '도울 여유가 없다',
-          note: '합류 조건이 식량 +2 · 물 +2 늘어난다',
           resolve(ctx) {
             const d = ctx.chain.data;
-            d.food += 2;
-            d.water += 2;
+            d.food += 2 * CAN;
+            d.water += 2 * CAN;
             d.trust = 'low';
             return finishTrustTest(ctx, '"그렇군." 정찰대원의 표정이 굳었다. "그렇다면 조건을 올리겠다."');
           },
@@ -302,12 +300,12 @@ const GROUP = {
       id: 'group_join',
       title: '합류의 날',
       text: (game, params, chain) =>
-        `약속한 날, 거점 사람들이 트럭을 몰고 왔다. "약속한 물자는 준비됐나? 식량 ${chain.data.food}, 물 ${chain.data.water}."${chain.data.delays ? ' 이번이 마지막 기회다.' : ''}`,
+        `약속한 날, 거점 사람들이 트럭을 몰고 왔다. "약속한 물자는 준비됐나? ${tribute(chain.data)}."${chain.data.delays ? ' 이번이 마지막 기회다.' : ''}`,
       options: [
         {
           id: 'pay',
           label: '약속한 물자를 건네고 합류한다',
-          cost: (game, params, chain) => `식량 ${chain.data.food} · 물 ${chain.data.water}`,
+          cost: (game, params, chain) => tribute(chain.data),
           check: (game, params, chain) =>
             needStock('food', chain.data.food)(game) ?? needStock('water', chain.data.water)(game),
           resolve(ctx) {
@@ -321,14 +319,14 @@ const GROUP = {
         {
           id: 'delay',
           label: '아직 물자가 부족하다',
-          note: (game, params, chain) => (chain.data.delays ? '합류 경로가 닫힌다' : '이틀 더 기다려 준다'),
+          note: (game, params, chain) => (chain.data.delays ? '다시는 오지 않을 것이다' : '조금 더 기다려 줄지도 모른다'),
           resolve(ctx) {
             const d = ctx.chain.data;
             if (d.delays < 1) {
               d.delays += 1;
-              const day = ctx.chain.retry([2, 2]);
+              const day = ctx.chain.retry([3, 3]);
               d.joinDay = day;
-              return `"이틀 주겠다. ${day}일차에도 없으면 없던 일이다."`;
+              return `"사흘 주겠다. ${day}일차에도 없으면 없던 일이다."`;
             }
             ctx.chain.fail('거점은 더 이상 기다려 주지 않는다.');
             return '트럭이 먼지를 일으키며 떠났다. 다시 오지 않을 것이다.';
@@ -351,17 +349,17 @@ const GROUP = {
     let next = '';
     let schedule = null;
     const short = [];
-    if (game.stock.food < d.food) short.push(`식량 ${d.food - game.stock.food}`);
-    if (game.stock.water < d.water) short.push(`물 ${d.water - game.stock.water}`);
+    if (game.stock.food < d.food) short.push(formatAmount('food', d.food - game.stock.food));
+    if (game.stock.water < d.water) short.push(formatAmount('water', d.water - game.stock.water));
     const gather = short.length
       ? `지금 재고로는 ${short.join(', ')}만큼 모자라다. 탐사로 채우자.`
       : '지금 재고로는 충분하지만, 그날까지 가족이 먹고 나서도 남아 있어야 한다.';
     if (chain.stage === 1) {
       schedule = `거점 사람 방문: ${when(chain)}`;
-      next = `${when(chain)}에 거점 사람들이 다시 온다. 합류 날 낼 몫(식량 ${d.food}, 물 ${d.water})을 따로 모아 두자. ${gather}`;
+      next = `${when(chain)}에 거점 사람들이 다시 온다. 합류 날 낼 몫(${tribute(d)})을 따로 모아 두자. ${gather}`;
     } else if (chain.stage === 2) {
       schedule = `합류의 날: ${when(chain)}`;
-      next = `${when(chain)}에 데리러 온다. 그날 아침 재고에 식량 ${d.food} 이상, 물 ${d.water} 이상이 남아 있어야 한다. ${gather}${d.delays ? ' 이번이 마지막 기회다.' : ''}`;
+      next = `${when(chain)}에 데리러 온다. 그날 아침 재고에 ${tribute(d)} 이상이 남아 있어야 한다. ${gather}${d.delays ? ' 이번이 마지막 기회다.' : ''}`;
     }
     return { steps, requirements, next, schedule };
   },
@@ -371,7 +369,7 @@ const GROUP = {
 
 function repaired(ctx, lead) {
   ctx.chain.data.repaired = true;
-  const day = ctx.chain.advance([1, 3]);
+  const day = ctx.chain.advance([8, 14]);
   ctx.chain.data.departDay = day;
   return `${lead} 이제 연료통 2개와 도로 지도만 있으면 된다. ${day}일차에 출발 준비를 점검하자.`;
 }
@@ -380,7 +378,7 @@ const CAR = {
   id: 'car',
   icon: '🚐',
   title: '승합차 탈출',
-  openWindow: [4, 8],
+  openWindow: [24, 45],
   initData: () => ({ repaired: false, departDay: null }),
   stages: [
     {
@@ -396,7 +394,7 @@ const CAR = {
           label: '차를 살펴본다',
           resolve(ctx) {
             ctx.chain.open();
-            const day = ctx.chain.advance([1, 3]);
+            const day = ctx.chain.advance([6, 12]);
             return `엔진에서 타는 냄새가 나고 연료는 한 방울도 없다. 엔진을 고치고 연료통 2개와 도로 지도를 구하면 도시를 빠져나갈 수 있을지도 모른다. ${day}일차에 엔진을 손보기로 했다.`;
           },
         },
@@ -407,7 +405,7 @@ const CAR = {
             chain.retries < OPENER_RETRIES.car ? '아직은 차가 그대로 있을 것이다' : '차가 사라질 것이다',
           resolve(ctx) {
             if (ctx.chain.state.retries < OPENER_RETRIES.car) {
-              ctx.chain.retry([3, 5]);
+              ctx.chain.retry([10, 18]);
               return '차고 문을 닫아 두었다.';
             }
             ctx.chain.fail('누군가 승합차를 몰고 가 버렸다.');
@@ -420,7 +418,6 @@ const CAR = {
       id: 'car_repair',
       title: '엔진 수리',
       text: () => '승합차의 시동을 걸어 보았다. 털털거리다 꺼져 버린다. 엔진을 손봐야 한다.',
-      hint: '공구 상자가 있거나, 동생이 움직일 수 있어야 고칠 수 있다.',
       options: [
         {
           id: 'toolkit',
@@ -438,9 +435,9 @@ const CAR = {
         {
           id: 'later',
           label: '나중에 고친다',
-          note: '하루 이틀 뒤 다시 시도한다',
+          note: '며칠 뒤 다시 시도한다',
           resolve(ctx) {
-            const day = ctx.chain.retry([1, 2]);
+            const day = ctx.chain.retry([2, 4]);
             return `오늘은 손댈 수 없다. ${day}일차에 다시 시도하기로 했다.`;
           },
         },
@@ -466,9 +463,9 @@ const CAR = {
         {
           id: 'wait',
           label: '아직 준비가 덜 됐다',
-          note: '2~3일 뒤 다시 점검한다',
+          note: '며칠 뒤 다시 점검한다',
           resolve(ctx) {
-            const day = ctx.chain.retry([2, 3]);
+            const day = ctx.chain.retry([5, 9]);
             ctx.chain.data.departDay = day;
             return `준비가 끝날 때까지 기다리기로 했다. 다음 점검일: ${day}일차.`;
           },

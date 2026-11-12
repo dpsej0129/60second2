@@ -13,7 +13,7 @@ export const INJURY_SPEED_PENALTY = 0.15; // 부상 단계마다 이동 속도 1
 export const SIM_STEP = 1 / 60; // 실시간 구간 고정 시뮬레이션 간격
 
 // ── 집 생존 ─────────────────────────────────────
-// 식량 1개·물 1개가 한 사람의 한 끼다. 매일 줄 필요는 없고, 아래 날짜만큼 버틸 수 있다.
+// 통조림 ¼캔·물 ¼병이 한 사람의 한 끼다. 매일 줄 필요는 없고, 아래 날짜만큼 버틸 수 있다.
 export const HUNGER_NOTICE = 3; // 이 이상이면 배고픔: 기본 배급표가 식량을 준다
 export const HUNGER_WEAK = 5; // 이 이상이면 굶주림: 사건에서 행동 불가
 export const HUNGER_DEATH = 7;
@@ -26,7 +26,13 @@ export const HEALTH_DEATH = 3;
 
 // ── 탐사(생존 단계에서 한 명을 밖으로 내보내 물자 구해 오기) ──
 export const EXPEDITION_CAPACITY = 4; // 탐사자가 들고 올 수 있는 칸 수(난이도에 따라 달라진다)
-export const EXPEDITION_DAYS = [1, 2]; // 떠난 뒤 며칠 만에 돌아오는지(무작위)
+export const EXPEDITION_DAYS = [2, 5]; // 떠난 뒤 며칠 만에 돌아오는지(무작위)
+
+// ── 마음 상태(가족) ─────────────────────────────
+// 0 안정 · 1 지침 · 2 울적함 · 3 우울함(행동 불가) · 4 무너짐(환청·망상, 집을 나갈 수 있다)
+export const MOOD_LOW = 2;
+export const MOOD_DEPRESSED = 3;
+export const MOOD_BROKEN = 4;
 
 // ── 사건 ────────────────────────────────────────
 export const CALM_DAYS = 1; // 집에 돌아온 첫날은 사건 없음(조용한 날로 셈)
