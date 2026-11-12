@@ -32,7 +32,7 @@ async function driveScramble(page, target, bring) {
       const { RunBot, scramblePlan } = await import('/tests/helpers/bot.mjs');
       const { scrambleLegs } = await import('/tests/helpers/strategy.mjs');
       const game = window.game;
-      const bot = new RunBot(scramblePlan(scrambleLegs(target, bring), game.martStock), { arriveDistance: 10 });
+      const bot = new RunBot(scramblePlan(scrambleLegs(target, bring), game.run.martStock, game.run.map), { arriveDistance: 10 });
       const held = new Set();
       const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
       const prompts = new Set();
@@ -116,9 +116,9 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
   await page.click('button[type=submit]');
   await waitScreen(page, 'run');
   assert.equal(await page.evaluate(() => window.game.difficulty.id), difficulty, '고른 난이도로 시작한다');
-  assert.equal(await text(page, '[data-ref="time"]'), '60.0', '시작 전에는 60초 그대로');
+  assert.equal(await text(page, '[data-ref="time"]'), '80.0', '시작 전에는 80초 그대로');
   await page.waitForTimeout(400);
-  assert.equal(await text(page, '[data-ref="time"]'), '60.0', '카운트다운 시작 전에는 시간이 흐르지 않는다');
+  assert.equal(await text(page, '[data-ref="time"]'), '80.0', '카운트다운 시작 전에는 시간이 흐르지 않는다');
   await shot('1-briefing');
 
   // 실제 키보드로 시작하고 움직여 본다

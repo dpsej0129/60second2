@@ -1,7 +1,8 @@
-// 게임 전체 흐름: 60초 탐색(물자·가족을 집으로) → 하루 단위 생존(사건·배급·탐사) → 결말.
+// 게임 전체 흐름: 80초 탐색(물자·가족을 집으로) → 하루 단위 생존(사건·배급·탐사) → 결말.
 // 화면(DOM)과 분리되어 있어 테스트에서 그대로 조작할 수 있다.
 import {
   EXPEDITION_DAYS,
+  RUN_SECONDS,
   HEALTH_DEATH,
   HUNGER_DEATH,
   HUNGER_WEAK,
@@ -36,7 +37,7 @@ import {
 import { Rng, randomSeed } from './rng.js';
 import { createRun, stepRun } from './run.js';
 import { josa } from './text.js';
-import { FAMILY_SPOTS, initialMartStock } from './world.js';
+import { createMartMap, initialMartStock } from './world.js';
 
 const evaluate = (value, ...args) => (typeof value === 'function' ? value(...args) : value);
 
@@ -66,7 +67,9 @@ export class Game {
     this.people = [createPerson(PLAYER_DEF, 'home'), ...FAMILY_DEFS.map((def) => createPerson(def, 'outside'))];
     this.stock = emptyStock();
     this.inventory = new Inventory();
-    this.martStock = initialMartStock();
+    // 마트 선반에 무엇이 놓였는지는 시드마다 다르다
+    this.martMap = createMartMap(root.fork('layout'));
+    this.martStock = initialMartStock(this.martMap);
 
     this.run = null;
     this.lastRun = null;
@@ -138,16 +141,35 @@ export class Game {
     return this.log.slice(this.journalCursor).filter((e) => e.kind !== 'event-start');
   }
 
-  // ── 60초 탐색 ────────────────────────────────
+  // ── 80초 탐색 ────────────────────────────────
+
+  /** 곧 시작할 실시간 구간(시작 전 화면에 보여 줄 지도·재고·가족 자리·제한 시간) */
+  upcomingRun() {
+    if (this.pendingMove) return this.pendingMove;
+    return {
+      kind: 'mart',
+      map: this.martMap,
+      martStock: this.martStock,
+      family: FAMILY_DEFS.map((def) => ({ id: def.id, ...this.martMap.familySpots[def.id] })),
+      duration: RUN_SECONDS,
+    };
+  }
+
+  /** 시작 화면에서 카운트다운을 누르면: 처음 80초 또는 이사 */
+  startRun() {
+    if (this.pendingMove) return this.startMoveRun();
+    return this.startFirstRun();
+  }
 
   startFirstRun() {
-    if (this.phase !== 'ready') return false;
+    if (this.phase !== 'ready' || this.pendingMove) return false;
     this.run = createRun({
       inventory: this.inventory,
       martStock: this.martStock,
       rng: this.rng.run,
       playerHealth: this.me.health,
-      family: FAMILY_DEFS.map((def) => ({ id: def.id, ...FAMILY_SPOTS[def.id] })),
+      family: FAMILY_DEFS.map((def) => ({ id: def.id, ...this.martMap.familySpots[def.id] })),
+      map: this.martMap,
       zombies: this.zombies,
       danger: this.difficulty.run,
     });
@@ -188,15 +210,15 @@ export class Game {
     for (const p of this.people) {
       if (p.status !== 'outside') continue;
       p.status = family.includes(p.id) ? 'home' : 'left';
-      if (p.status === 'left') p.fate = '60초 안에 데려오지 못했다.';
+      if (p.status === 'left') p.fate = `${run.duration}초 안에 데려오지 못했다.`;
     }
     this.inventory.takeAll();
     this.run = null;
     const summary = itemSummary(items);
     const opening =
       run.endedBy === 'enter'
-        ? `60초. ${Math.max(1, Math.round(run.timeLeft))}초를 남기고 문을 걸어 잠갔다.`
-        : '60초가 끝나는 순간, 간신히 집 문간에 닿았다.';
+        ? `${run.duration}초. ${Math.max(1, Math.round(run.timeLeft))}초를 남기고 문을 걸어 잠갔다.`
+        : `${run.duration}초가 끝나는 순간, 간신히 집 문간에 닿았다.`;
     this.addLog(`${opening} ${summary ? `마트에서 들고 온 것: ${summary}.` : '마트에서는 아무것도 들고 오지 못했다.'}`, 'good', 'scramble');
     const brought = this.people.filter((p) => family.includes(p.id)).map((p) => p.name);
     const left = this.people.filter((p) => p.status === 'left').map((p) => p.name);

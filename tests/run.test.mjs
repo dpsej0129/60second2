@@ -4,12 +4,13 @@ import { PICKUP_SECONDS, PLAYER_SPEED, RUN_SECONDS, SIM_STEP } from '../src/core
 import { Game } from '../src/core/game.js';
 import { ITEMS, SERVINGS } from '../src/core/items.js';
 import { pickupPreview, spawnZombie } from '../src/core/run.js';
-import { HOME_DOOR, HOME_ZONE, MART_DOORS, SHELVES, dist, inMart } from '../src/core/world.js';
+import { HOME_DOOR, HOME_ZONE, MART_DOORS, createMartMap, dist, inMart } from '../src/core/world.js';
 import { RunBot, standPoint } from './helpers/bot.mjs';
 import { HOME_SPOT, dropAtHome, enterHome, pickHere, teleport } from './helpers/setup.mjs';
 import { playScramble } from './helpers/strategy.mjs';
 
-const shelfOf = (itemId) => SHELVES.find((s) => s.itemId === itemId);
+// 선반 배치는 시드마다 다르다: 그 게임의 마트 지도에서 찾는다
+const shelfOf = (game, itemId) => game.martMap.shelves.find((s) => s.itemId === itemId);
 
 function startGame(seed = 3, zombies = false, difficulty = 'hard') {
   const game = new Game({ seed, zombies, difficulty });
@@ -18,12 +19,12 @@ function startGame(seed = 3, zombies = false, difficulty = 'hard') {
 }
 
 function grab(game, itemId) {
-  const shelf = shelfOf(itemId);
+  const shelf = shelfOf(game, itemId);
   teleport(game, standPoint(shelf, game.run.player));
   pickHere(game);
 }
 
-test('60초 탐색은 마트 안에서 시작하고, 시작 버튼을 누르기 전에는 시간이 흐르지 않는다', () => {
+test('80초 탐색은 마트 안에서 시작하고, 시작 버튼을 누르기 전에는 시간이 흐르지 않는다', () => {
   const game = new Game({ seed: 3 });
   assert.equal(game.phase, 'ready');
   assert.equal(game.run, null);
@@ -41,7 +42,7 @@ test('60초 탐색은 마트 안에서 시작하고, 시작 버튼을 누르기 
   assert.ok(Math.abs(game.run.timeLeft - (RUN_SECONDS - 1)) < 1e-9);
 });
 
-test('마트 정문에서 집까지 빈손으로 5초 안쪽이라, 60초 안에 여러 번 오갈 수 있다', () => {
+test('마트 정문에서 집까지 빈손으로 5초 안쪽이라, 80초 안에 여러 번 오갈 수 있다', () => {
   assert.ok(PLAYER_SPEED >= 150);
   const game = startGame();
   teleport(game, MART_DOORS[0].outside);
@@ -57,7 +58,7 @@ test('물품이든 가족이든 가방에 넣는 데 0.3초가 걸린다', () =>
   assert.equal(PICKUP_SECONDS, 0.3);
   const game = startGame();
   const run = game.run;
-  for (const where of [standPoint(shelfOf('medkit'), run.player), run.ground.find((g) => g.id === 'dad')]) {
+  for (const where of [standPoint(shelfOf(game, 'medkit'), run.player), run.ground.find((g) => g.id === 'dad')]) {
     game.inventory.takeAll();
     teleport(game, where);
     assert.equal(pickupPreview(run).seconds, 0.3);
@@ -79,7 +80,7 @@ test('집기 전에 필요한 칸 수와 남은 칸을 알려 주고, 칸이 모
   game.inventory.add('canned');
   game.inventory.add('water');
   game.inventory.add('water'); // 3칸 사용, 1칸 남음
-  const shelf = shelfOf('medkit');
+  const shelf = shelfOf(game, 'medkit');
   teleport(game, standPoint(shelf, run.player));
   const preview = pickupPreview(run);
   assert.equal(preview.shelf.id, shelf.id);
@@ -101,7 +102,7 @@ test('집기 전에 필요한 칸 수와 남은 칸을 알려 주고, 칸이 모
   assert.equal(game.martStock[shelf.id], before - 1, '마트 재고가 줄어든다');
 });
 
-test('집 앞에 물품을 내려놓아도 탐색은 계속되고, 60초 안에 다시 나가 더 가져올 수 있다', () => {
+test('집 앞에 물품을 내려놓아도 탐색은 계속되고, 80초 안에 다시 나가 더 가져올 수 있다', () => {
   const game = startGame();
   grab(game, 'radio');
   grab(game, 'battery');
@@ -170,7 +171,7 @@ test('집 밖에서 내려놓은 가족·물품은 그 자리에 남아 다시 �
   assert.deepEqual(game.inventory.items, ['sis']);
 });
 
-test('60초가 끝날 때 집 문간에 있으면 무사하다', () => {
+test('80초가 끝날 때 집 문간에 있으면 무사하다', () => {
   const game = startGame();
   grab(game, 'canned');
   teleport(game, HOME_SPOT);
@@ -180,7 +181,7 @@ test('60초가 끝날 때 집 문간에 있으면 무사하다', () => {
   assert.equal(game.stock.food, ITEMS.canned.gives.food);
 });
 
-test('60초가 끝날 때 집 밖에 있으면 패배한다', () => {
+test('80초가 끝날 때 집 밖에 있으면 패배한다', () => {
   const game = startGame(5);
   grab(game, 'canned');
   dropAtHome(game); // 물건을 들여놓았더라도
@@ -224,7 +225,7 @@ test('문간에 들어서면 쫓아오던 좀비가 흩어져, 다시 마트로 
   assert.equal(z.chasing, false, '흩어지는 동안에는 다시 알아채지 못한다');
 });
 
-test('마트 두 번 왕복과 가족 3명 구출을 60초 안에 해낼 수 있다(좀비 없음)', () => {
+test('마트 두 번 왕복과 가족 3명 구출을 80초 안에 해낼 수 있다(좀비 없음)', () => {
   const game = startGame(7);
   const result = playScramble(game, [['radio', 'battery', 'flare', 'water'], ['dad'], ['mom', 'sis'], ['water', 'water', 'canned', 'canned']]);
   assert.equal(result.outcome, 'home');
@@ -251,4 +252,18 @@ test('방향키 하나로 선반 모서리를 스치며 지나가도 걸리지 �
   p.y = 109;
   for (let i = 0; i < 30; i++) game.stepRun(SIM_STEP, { mx: 1, my: 0 });
   assert.ok(p.x > 300, `오른쪽으로 계속 나아간다 (x=${p.x.toFixed(1)})`);
+});
+
+test('처음 제한 시간은 80초이고, 마트 선반의 물품 배치는 시드마다 다르다', () => {
+  assert.equal(RUN_SECONDS, 80);
+  const layout = (seed) => new Game({ seed }).martMap.shelves.map((s) => s.itemId).join(',');
+  assert.equal(layout(5), layout(5), '같은 시드면 같은 배치');
+  const layouts = new Set([1, 2, 3, 4, 5, 6, 7, 8].map(layout));
+  assert.ok(layouts.size >= 7, `시드 8개 중 서로 다른 배치 ${layouts.size}가지`);
+  // 섞여도 물품 종류와 수량은 같다
+  const count = (map) => map.shelves.reduce((acc, s) => ({ ...acc, [s.itemId]: (acc[s.itemId] ?? 0) + s.initialStock }), {});
+  assert.deepEqual(count(new Game({ seed: 9 }).martMap), count(createMartMap()));
+  const game = new Game({ seed: 9 });
+  game.startFirstRun();
+  assert.equal(game.run.map, game.martMap, '그 게임의 배치로 80초가 진행된다');
 });

@@ -30,8 +30,8 @@ const RACK_ROWS = [122, 428];
 const RACK_H = 170;
 export const RACKS = RACK_COLS.flatMap((x) => RACK_ROWS.map((y) => rect(x, y, 44, RACK_H, 'rack')));
 
-// [선반 열, 줄(0 위/1 아래), 칸(0 위쪽/1 아래쪽), 물품, 수량]
-// 문에서 먼 안쪽일수록 귀한 물건이 있다. 식량·물은 여러 번 오가도 남을 만큼 넉넉하다.
+// [선반 열, 줄(0 위/1 아래), 칸(0 위쪽/1 아래쪽), 물품, 수량] — 시드가 없을 때의 기본 배치
+// 시드가 있으면 같은 물품·수량 묶음을 15칸에 무작위로 섞어 놓는다(createMartMap).
 const SHELF_LAYOUT = [
   [0, 0, 0, 'medkit', 2],
   [0, 0, 1, 'radio', 1],
@@ -50,18 +50,26 @@ const SHELF_LAYOUT = [
   [3, 1, 0, 'water', 6],
 ];
 
-export const SHELVES = SHELF_LAYOUT.map(([col, row, slot, itemId, stock], i) => {
-  if (!ITEMS[itemId]) throw new Error(`알 수 없는 물품 ${itemId}`);
-  const rack = RACKS[col * RACK_ROWS.length + row];
-  return {
-    id: `shelf-${i + 1}`,
-    itemId,
-    initialStock: stock,
-    rack,
-    x: rack.x + rack.w / 2,
-    y: rack.y + RACK_H * (slot ? 0.75 : 0.25),
-  };
-});
+function buildShelves(goods) {
+  return SHELF_LAYOUT.map(([col, row, slot], i) => {
+    const [itemId, stock] = goods[i];
+    if (!ITEMS[itemId]) throw new Error(`알 수 없는 물품 ${itemId}`);
+    const rack = RACKS[col * RACK_ROWS.length + row];
+    return {
+      id: `shelf-${i + 1}`,
+      itemId,
+      initialStock: stock,
+      rack,
+      x: rack.x + rack.w / 2,
+      y: rack.y + RACK_H * (slot ? 0.75 : 0.25),
+    };
+  });
+}
+
+const DEFAULT_GOODS = SHELF_LAYOUT.map(([, , , itemId, stock]) => [itemId, stock]);
+
+/** 기본 배치(시드와 무관). 새 게임은 createMartMap(rng)로 섞인 배치를 쓴다. */
+export const SHELVES = buildShelves(DEFAULT_GOODS);
 
 export const CARS = [
   rect(790, 150, 140, 60, 'car'),
@@ -88,16 +96,51 @@ export const STREET = rect(760, 24, 420, 672, 'street'); // 거리 좀비가 나
 
 export const SOLIDS = [...WALLS, ...RACKS, ...CARS, HOUSE];
 
-export function initialMartStock() {
-  return Object.fromEntries(SHELVES.map((s) => [s.id, s.initialStock]));
+/**
+ * 실시간 구간 지도. 마트(처음 80초)와 이사 지도가 같은 모양을 쓴다.
+ * indoor: 물품이 있는 건물 안(좀비가 출입구로만 드나든다), doors: 그 출입구, shelves: 집을 수 있는 물품 자리,
+ * house/homeZone: 도착지, street: 좀비가 나타나는 거리, spawnInside: 처음부터 건물 안에 있는 좀비 자리(null이면 없음)
+ */
+export function createMartMap(rng = null) {
+  const goods = rng ? rng.shuffle(DEFAULT_GOODS) : DEFAULT_GOODS;
+  return {
+    id: 'mart',
+    outer: MART,
+    indoor: MART_INNER,
+    doors: MART_DOORS,
+    walls: WALLS,
+    racks: RACKS,
+    cars: CARS,
+    house: HOUSE,
+    homeZone: HOME_ZONE,
+    homeDoor: HOME_DOOR,
+    start: START,
+    familySpots: FAMILY_SPOTS,
+    street: STREET,
+    spawnInside: rect(470, MART_INNER.y + 16, MART_INNER.x + MART_INNER.w - 16 - 470, MART_INNER.h - 32, 'spawn'),
+    shelves: rng ? buildShelves(goods) : SHELVES,
+    solids: SOLIDS,
+    zombieSolids: [...SOLIDS, HOME_ZONE],
+    laneY: 360,
+    labels: { indoor: '대형 마트', door: '정문 →', doorAt: { x: MART.x + MART.w + 40, y: 292 }, home: '집', arrive: '도착', inside: '마트 안' },
+    colors: { floor: '#30363c', house: '#8b5e3c', roof: '#5d3b24' },
+  };
+}
+
+/** 시드와 무관한 기본 마트 지도 */
+export const MART_MAP = createMartMap();
+
+/** 지도(마트 또는 이사 지도)의 선반 재고 { 선반 id: 수량 } */
+export function initialMartStock(map = MART_MAP) {
+  return Object.fromEntries(map.shelves.map((s) => [s.id, s.initialStock]));
 }
 
 export function inRect(p, r) {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
 
-export function inMart(p) {
-  return inRect(p, MART_INNER);
+export function inMart(p, map = MART_MAP) {
+  return inRect(p, map.indoor);
 }
 
 function circleHitsRect(x, y, r, box) {

@@ -1,22 +1,9 @@
-// 60초 실시간 구간 화면: 캔버스 지도 + 남은 시간·가방·줍기 안내 HUD + 키보드/터치 입력.
+// 실시간 구간 화면(처음 80초·이사): 캔버스 지도 + 남은 시간·가방·줍기 안내 HUD + 키보드/터치 입력.
 import { INVENTORY_SLOTS, SIM_STEP } from '../core/constants.js';
 import { carryInfo, isPerson } from '../core/inventory.js';
 import { ITEMS } from '../core/items.js';
 import { pickupPreview, playerSpeed, zombieSight } from '../core/run.js';
-import {
-  CARS,
-  FAMILY_SPOTS,
-  HOME_ZONE,
-  HOUSE,
-  MART,
-  MART_DOORS,
-  RACKS,
-  SHELVES,
-  START,
-  WALLS,
-  WORLD,
-  inMart,
-} from '../core/world.js';
+import { WORLD, inRect } from '../core/world.js';
 import { FAMILY_DEFS } from '../core/people.js';
 import { esc } from './dom.js';
 
@@ -85,7 +72,7 @@ export class RunView {
         <div class="run-hud">
           <div class="hud-timer" data-ref="timerBox">
             <span class="hud-label">남은 시간</span>
-            <span class="hud-time" data-ref="time">60.0</span>
+            <span class="hud-time" data-ref="time">${this.duration.toFixed(1)}</span>
           </div>
           <div class="hud-mid">
             <div class="hud-goal" data-ref="goal"></div>
@@ -97,7 +84,7 @@ export class RunView {
           </div>
         </div>
         <div class="run-stage" data-ref="stage">
-          <canvas data-ref="canvas" aria-label="마트와 집 사이 지도"></canvas>
+          <canvas data-ref="canvas" aria-label="${esc(this.map.labels.indoor)}와 ${esc(this.map.labels.home)} 사이 지도"></canvas>
           <div class="run-prompt" data-ref="prompt" hidden></div>
           <div class="run-toasts" data-ref="toasts"></div>
           <div class="run-overlay" data-ref="overlay" ${first ? '' : 'hidden'}>
@@ -151,19 +138,49 @@ export class RunView {
     this.frame = requestAnimationFrame((t) => this.loop(t));
   }
 
+  /** 지금(또는 곧 시작할) 실시간 구간의 지도·종류·제한 시간 */
+  get map() {
+    return this.currentRun()?.map ?? this.game.upcomingRun().map;
+  }
+
+  get kind() {
+    return this.currentRun()?.kind ?? this.game.upcomingRun().kind;
+  }
+
+  get duration() {
+    return this.currentRun()?.duration ?? this.game.upcomingRun().duration;
+  }
+
   briefingHtml() {
+    const sec = this.duration;
+    if (this.kind === 'move') {
+      const { labels } = this.map;
+      return `
+      <div class="briefing">
+        <p class="kicker">이사 · ${sec}초</p>
+        <h2>${esc(labels.home)}로 옮긴다</h2>
+        <p>지도 왼쪽 <b>${esc(labels.indoor)}</b>에 쌓아 둔 짐과 식구를 <b>${sec}초 안에</b> 오른쪽 <b>${esc(labels.home)}</b>로 옮겨야 한다.
+           <b>옮기지 못한 물자는 잃고, 데려오지 못한 식구는 남겨진다.</b></p>
+        <ul>
+          <li>가방은 <b>4칸</b>. 통조림·생수는 한 캔·한 병씩, 무거운 물건은 2칸을 차지한다.</li>
+          <li>${esc(labels.home)} 앞 <b>도착 구역</b>에 들어서면 가방이 비워진다. 몇 번이고 다시 다녀올 수 있다.</li>
+          <li><b>${sec}초가 끝날 때 도착 구역 안에 있어야 산다.</b> 일찍 끝내려면 도착 구역에서 <kbd>E</kbd>로 들어간다.</li>
+        </ul>
+        <button type="button" class="btn primary big" data-action="start-run">카운트다운 시작 <kbd>Enter</kbd></button>
+      </div>`;
+    }
     return `
       <div class="briefing">
-        <p class="kicker">60초</p>
+        <p class="kicker">${sec}초</p>
         <h2>대형 마트 안에 갇혔다</h2>
         <p>정전된 매장 밖에서 좀비의 신음이 들린다. 카운트다운이 시작되면 좀비가 몰려온다.
-           <b>60초 동안</b> 마트와 지도 오른쪽 끝의 <b>집</b>을 오가며 물자와 가족을 집으로 옮겨야 한다.</p>
+           <b>${sec}초 동안</b> 마트와 지도 오른쪽 끝의 <b>집</b>을 오가며 물자와 가족을 집으로 옮겨야 한다.</p>
         <ul>
-          <li>가방은 <b>4칸</b>. 생수·통조림은 1칸(1개 = 식량·물 1), 대형 구급상자·공구 상자·연료통은 2칸을 차지한다.</li>
+          <li>가방은 <b>4칸</b>. 통조림·생수는 1칸(한 캔·한 병은 네 번 나눠 먹는다), 대형 구급상자·공구 상자·연료통은 2칸을 차지한다.</li>
           <li>집 앞 <b>도착 구역</b>에 들어서면 가방이 저절로 비워지고 주변 좀비가 흩어진다. 몇 번이고 다시 다녀올 수 있다.</li>
           <li>집 주변에 숨은 <b>가족도 칸을 차지한다</b>(아빠 3칸, 엄마·동생 2칸). 데려오지 못한 가족은 남겨진다.</li>
-          <li><b>60초가 끝날 때 도착 구역 안에 있어야 산다.</b> 일찍 끝내려면 도착 구역에서 <kbd>E</kbd>로 문을 잠그고 들어간다.</li>
-          <li>줍는 데는 0.3초. 선반과 벽 뒤에 숨으면 좀비가 보지 못한다.</li>
+          <li><b>${sec}초가 끝날 때 도착 구역 안에 있어야 산다.</b> 일찍 끝내려면 도착 구역에서 <kbd>E</kbd>로 문을 잠그고 들어간다.</li>
+          <li>선반마다 무엇이 있는지는 판마다 다르다. 줍는 데는 0.3초. 선반과 벽 뒤에 숨으면 좀비가 보지 못한다.</li>
         </ul>
         <button type="button" class="btn primary big" data-action="start-run">카운트다운 시작 <kbd>Enter</kbd></button>
       </div>`;
@@ -173,7 +190,7 @@ export class RunView {
     if (this.game.phase !== 'ready') return;
     this.refs.overlay.hidden = true;
     this.refs.overlay.innerHTML = '';
-    this.game.startFirstRun();
+    this.game.startRun();
     this.lastFrame = null;
     this.accumulator = 0;
   }
@@ -278,11 +295,13 @@ export class RunView {
     this.finishing = true;
     this.lastRun = lastRun;
     const home = lastRun?.outcome === 'home';
-    const title = home ? (lastRun.endedBy === 'enter' ? '문을 잠그고 집에 들어갔다' : '60초가 끝났다 — 집 안으로!') : ending?.title ?? '실패';
+    const place = this.map.labels.home;
+    const sec = lastRun?.duration ?? this.duration;
+    const title = home ? (lastRun.endedBy === 'enter' ? `문을 잠그고 ${place}에 들어갔다` : `${sec}초가 끝났다 — ${place} 안으로!`) : ending?.title ?? '실패';
     const detail = home
-      ? `물품 ${lastRun.items.length}개 · 가족 ${lastRun.family.length}명을 집에 들였다${lastRun.endedBy === 'enter' ? ` · 남은 시간 ${lastRun.timeLeft.toFixed(1)}초` : ''}`
+      ? `물품 ${lastRun.items.length}개 · 가족 ${lastRun.family.length}명을 ${place}에 들였다${lastRun.endedBy === 'enter' ? ` · 남은 시간 ${lastRun.timeLeft.toFixed(1)}초` : ''}`
       : lastRun?.outcome === 'timeout'
-        ? '60초가 끝났을 때 집 밖에 있었다.'
+        ? `${sec}초가 끝났을 때 ${place} 밖에 있었다.`
         : '좀비에게 붙잡혔다.';
     this.refs.overlay.hidden = false;
     this.refs.overlay.innerHTML = `<div class="run-result ${home ? 'good' : 'bad'}"><h2>${esc(title)}</h2><p>${esc(detail)}</p></div>`;
@@ -307,7 +326,7 @@ export class RunView {
 
   renderHud() {
     const run = this.currentRun();
-    const timeLeft = run ? run.timeLeft : 60;
+    const timeLeft = run ? run.timeLeft : this.duration;
     const { time, timerBox, goal, home, bag, bagCount, prompt, toasts, pickBtn } = this.refs;
     time.textContent = timeLeft.toFixed(1);
     timerBox.classList.toggle('warn', timeLeft <= 20 && timeLeft > 10);
@@ -336,25 +355,29 @@ export class RunView {
       const itemsText = Object.entries(counts)
         .map(([id, n]) => `${ITEMS[id].short}${n > 1 ? `×${n}` : ''}`)
         .join(' · ');
-      const family = FAMILY_DEFS.map((def) => {
+      const onMap = this.kind === 'move' ? new Set((run ? run.familyIds : this.game.upcomingRun().familyIds) ?? []) : null;
+      const family = FAMILY_DEFS.filter((def) => !onMap || onMap.has(def.id)).map((def) => {
         const safe = delivered.includes(def.id);
         return `<span class="fam ${safe ? 'safe' : ''}" style="--c:${def.color}">${safe ? '✔' : '…'} ${esc(def.name)}</span>`;
       }).join('');
-      home.innerHTML = `<span class="hud-label">집에 들여놓은 것</span><span class="home-items">${esc(itemsText || '아직 없음')}</span><span class="home-family">${family}</span>`;
+      home.innerHTML = `<span class="hud-label">${esc(this.map.labels.home)}에 들여놓은 것</span><span class="home-items">${esc(itemsText || '아직 없음')}</span><span class="home-family">${family}</span>`;
     }
 
+    const place = this.map.labels.home;
     if (!run) {
-      goal.textContent = '목표: 물자와 가족을 집으로';
+      goal.textContent = `목표: 물자와 가족을 ${place}로`;
       prompt.hidden = true;
       pickBtn.disabled = true;
       return;
     }
 
-    const toHome = Math.hypot(HOME_ZONE.x + HOME_ZONE.w / 2 - run.player.x, HOME_ZONE.y + HOME_ZONE.h / 2 - run.player.y);
+    const zone = this.map.homeZone;
+    const toHome = Math.hypot(zone.x + zone.w / 2 - run.player.x, zone.y + zone.h / 2 - run.player.y);
     const eta = toHome / playerSpeed(run);
-    if (run.atHome) goal.textContent = run.timeLeft > 0 ? '집 문간: 여기 있으면 안전하다 · 다시 나가도 된다' : '';
-    else if (run.timeLeft < eta + 5) goal.textContent = `⚠ 서둘러 집으로! 집까지 약 ${eta.toFixed(1)}초`;
-    else if (!inventory.isEmpty) goal.textContent = '목표: 집 앞 도착 구역으로 가져가기 (오른쪽)';
+    if (run.atHome) goal.textContent = run.timeLeft > 0 ? `${place} 문간: 여기 있으면 안전하다 · 다시 나가도 된다` : '';
+    else if (run.timeLeft < eta + 5) goal.textContent = `⚠ 서둘러 ${place}로! 약 ${eta.toFixed(1)}초 거리`;
+    else if (!inventory.isEmpty) goal.textContent = `목표: ${place} 앞 도착 구역으로 가져가기`;
+    else if (this.kind === 'move') goal.textContent = `목표: ${this.map.labels.indoor}의 짐과 식구를 ${place}로`;
     else goal.textContent = '목표: 마트에서 물자를, 집 주변에서 가족을 데려오기';
 
     const preview = run.outcome ? null : pickupPreview(run);
@@ -398,7 +421,7 @@ export class RunView {
   draw() {
     const { ctx } = this;
     const run = this.currentRun();
-    const player = run ? run.player : { ...START, r: 14, faceX: 1, faceY: 0 };
+    const player = run ? run.player : { ...this.map.start, r: 14, faceX: 1, faceY: 0 };
     this.camX = Math.max(0, Math.min(WORLD.w - this.viewW, player.x - this.viewW / 2));
     this.camY = Math.max(0, Math.min(WORLD.h - this.viewH, player.y - this.viewH / 2));
     if (this.viewH >= WORLD.h) this.camY = (WORLD.h - this.viewH) / 2;
@@ -421,24 +444,29 @@ export class RunView {
   }
 
   drawWorld() {
-    const { ctx } = this;
+    const { ctx, map } = this;
+    const { outer, house, homeZone, labels, colors } = map;
     ctx.fillStyle = COLORS.street;
-    ctx.fillRect(MART.x + MART.w, 0, WORLD.w - MART.x - MART.w, WORLD.h);
+    ctx.fillRect(outer.x + outer.w, 0, WORLD.w - outer.x - outer.w, WORLD.h);
+    if (map.yard) {
+      ctx.fillStyle = colors.yard;
+      ctx.fillRect(map.yard.x, map.yard.y, map.yard.w, map.yard.h);
+    }
     ctx.strokeStyle = COLORS.lane;
     ctx.lineWidth = 4;
     ctx.setLineDash([36, 28]);
     ctx.beginPath();
-    ctx.moveTo(MART.x + MART.w + 20, 360);
-    ctx.lineTo(HOUSE.x - 80, 360);
+    ctx.moveTo(outer.x + outer.w + 20, map.laneY);
+    ctx.lineTo(house.x - 80, map.laneY);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.fillStyle = COLORS.martFloor;
-    ctx.fillRect(MART.x, MART.y, MART.w, MART.h);
+    ctx.fillStyle = colors.floor;
+    ctx.fillRect(outer.x, outer.y, outer.w, outer.h);
     ctx.fillStyle = COLORS.wall;
-    for (const w of WALLS) ctx.fillRect(w.x, w.y, w.w, w.h);
+    for (const w of map.walls) ctx.fillRect(w.x, w.y, w.w, w.h);
     ctx.fillStyle = COLORS.door;
-    for (const door of MART_DOORS) {
+    for (const door of map.doors) {
       const g = door.gap;
       if (g.w < g.h) ctx.fillRect(g.x + g.w / 2 - 2, g.y, 4, g.h);
       else ctx.fillRect(g.x, g.y + g.h / 2 - 2, g.w, 4);
@@ -446,47 +474,48 @@ export class RunView {
     ctx.fillStyle = COLORS.muted;
     ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('대형 마트', MART.x + 150, MART.y - 14);
-    ctx.fillText('정문 →', MART.x + MART.w + 40, 292);
+    ctx.fillText(labels.indoor, outer.x + 150, outer.y - 14);
+    if (labels.door) ctx.fillText(labels.door, labels.doorAt.x, labels.doorAt.y);
 
-    for (const car of CARS) {
-      ctx.fillStyle = COLORS.car;
+    for (const car of map.cars) {
+      ctx.fillStyle = car.kind === 'rubble' ? '#5b534a' : COLORS.car;
       ctx.fillRect(car.x, car.y, car.w, car.h);
+      if (car.kind === 'rubble') continue;
       ctx.fillStyle = COLORS.carGlass;
       if (car.w > car.h) ctx.fillRect(car.x + car.w * 0.3, car.y + 8, car.w * 0.35, car.h - 16);
       else ctx.fillRect(car.x + 8, car.y + car.h * 0.3, car.w - 16, car.h * 0.35);
     }
 
     ctx.fillStyle = COLORS.homeZone;
-    ctx.fillRect(HOME_ZONE.x - 8, HOME_ZONE.y, HOME_ZONE.w + 8, HOME_ZONE.h);
-    ctx.fillStyle = COLORS.house;
-    ctx.fillRect(HOUSE.x, HOUSE.y, HOUSE.w, HOUSE.h);
-    ctx.strokeStyle = COLORS.roof;
+    ctx.fillRect(homeZone.x - 8, homeZone.y, homeZone.w + 8, homeZone.h);
+    ctx.fillStyle = colors.house;
+    ctx.fillRect(house.x, house.y, house.w, house.h);
+    ctx.strokeStyle = colors.roof;
     ctx.lineWidth = 8;
-    ctx.strokeRect(HOUSE.x + 4, HOUSE.y + 4, HOUSE.w - 8, HOUSE.h - 8);
+    ctx.strokeRect(house.x + 4, house.y + 4, house.w - 8, house.h - 8);
     ctx.fillStyle = COLORS.door;
-    ctx.fillRect(HOUSE.x - 4, HOME_ZONE.y + 10, 8, HOME_ZONE.h - 20);
+    ctx.fillRect(house.x - 4, homeZone.y + 10, 8, homeZone.h - 20);
     ctx.fillStyle = COLORS.label;
     ctx.font = 'bold 26px sans-serif';
-    ctx.fillText('집', HOUSE.x + HOUSE.w / 2, HOUSE.y + HOUSE.h / 2 + 9);
+    ctx.fillText(labels.home, house.x + house.w / 2, house.y + house.h / 2 + 9);
     ctx.font = 'bold 13px sans-serif';
     ctx.fillStyle = '#9fe0a8';
-    ctx.fillText('도착', HOME_ZONE.x + HOME_ZONE.w / 2 - 4, HOME_ZONE.y - 8);
+    ctx.fillText(labels.arrive, homeZone.x + homeZone.w / 2 - 4, homeZone.y - 8);
     ctx.textAlign = 'left';
   }
 
   drawShelves(run, preview) {
-    const { ctx } = this;
-    for (const rack of RACKS) {
+    const { ctx, map } = this;
+    for (const rack of map.racks) {
       ctx.fillStyle = COLORS.rack;
       ctx.fillRect(rack.x, rack.y, rack.w, rack.h);
       ctx.strokeStyle = COLORS.rackEdge;
       ctx.lineWidth = 2;
       ctx.strokeRect(rack.x + 1, rack.y + 1, rack.w - 2, rack.h - 2);
     }
-    const stockOf = (shelf) => (run ? run.martStock[shelf.id] : this.game.martStock[shelf.id]) ?? 0;
+    const stockOf = (shelf) => (run ? run.martStock[shelf.id] : this.game.upcomingRun().martStock[shelf.id]) ?? 0;
     ctx.textAlign = 'center';
-    for (const shelf of SHELVES) {
+    for (const shelf of map.shelves) {
       const item = ITEMS[shelf.itemId];
       const stock = stockOf(shelf);
       const active = preview?.shelf?.id === shelf.id;
@@ -512,9 +541,7 @@ export class RunView {
   /** 바닥에 있는 것: 집 주변에 숨은 가족, 내려놓은 물건 */
   drawGround(run, preview) {
     const { ctx } = this;
-    const ground = run
-      ? run.ground
-      : FAMILY_DEFS.map((def) => ({ uid: def.id, id: def.id, ...FAMILY_SPOTS[def.id] }));
+    const ground = run ? run.ground : this.game.upcomingRun().family.map((f) => ({ uid: f.id, ...f }));
     ctx.textAlign = 'center';
     for (const g of ground) {
       const info = carryInfo(g.id);
@@ -559,14 +586,14 @@ export class RunView {
         const info = carryInfo(id);
         ctx.fillStyle = info.color;
         ctx.beginPath();
-        ctx.arc(HOUSE.x + 40 + i * 34, HOUSE.y + HOUSE.h - 30, 10, 0, Math.PI * 2);
+        ctx.arc(this.map.house.x + 40 + i * 34, this.map.house.y + this.map.house.h - 30, 10, 0, Math.PI * 2);
         ctx.fill();
       });
       const items = run.delivered.filter((id) => !isPerson(id)).length;
       if (items) {
         ctx.fillStyle = '#9fe0a8';
         ctx.font = 'bold 13px sans-serif';
-        ctx.fillText(`물품 ${items}개`, HOUSE.x + HOUSE.w / 2, HOUSE.y + 40);
+        ctx.fillText(`물품 ${items}개`, this.map.house.x + this.map.house.w / 2, this.map.house.y + 40);
       }
     }
     ctx.textAlign = 'left';
@@ -611,7 +638,8 @@ export class RunView {
 
   drawObjectiveArrow(run, p) {
     if (!run || run.atHome) return;
-    const target = { x: HOME_ZONE.x + HOME_ZONE.w / 2, y: HOME_ZONE.y + HOME_ZONE.h / 2, label: '집' };
+    const zone = this.map.homeZone;
+    const target = { x: zone.x + zone.w / 2, y: zone.y + zone.h / 2, label: this.map.labels.home };
     const sx = target.x - this.camX;
     const sy = target.y - this.camY;
     if (sx > 20 && sx < this.viewW - 20 && sy > 20 && sy < this.viewH - 20) return;
@@ -649,12 +677,13 @@ export class RunView {
     const s = w / WORLD.w;
     ctx.fillStyle = 'rgba(10, 11, 13, 0.78)';
     ctx.fillRect(x0 - 4, y0 - 4, w + 8, h + 8);
-    ctx.fillStyle = COLORS.martFloor;
-    ctx.fillRect(x0 + MART.x * s, y0 + MART.y * s, MART.w * s, MART.h * s);
+    const { outer, house, cars, colors } = this.map;
+    ctx.fillStyle = colors.floor;
+    ctx.fillRect(x0 + outer.x * s, y0 + outer.y * s, outer.w * s, outer.h * s);
     ctx.fillStyle = COLORS.car;
-    for (const c of CARS) ctx.fillRect(x0 + c.x * s, y0 + c.y * s, c.w * s, c.h * s);
-    ctx.fillStyle = COLORS.house;
-    ctx.fillRect(x0 + HOUSE.x * s, y0 + HOUSE.y * s, HOUSE.w * s, HOUSE.h * s);
+    for (const c of cars) ctx.fillRect(x0 + c.x * s, y0 + c.y * s, c.w * s, c.h * s);
+    ctx.fillStyle = colors.house;
+    ctx.fillRect(x0 + house.x * s, y0 + house.y * s, house.w * s, house.h * s);
     if (run) {
       for (const z of run.zombies) {
         ctx.fillStyle = z.chasing ? COLORS.danger : COLORS.zombie;
@@ -672,7 +701,7 @@ export class RunView {
       ctx.fillStyle = COLORS.muted;
       ctx.font = '11px sans-serif';
       const chasing = run.zombies.filter((z) => z.chasing).length;
-      ctx.fillText(`좀비 ${run.zombies.length} · 추격 중 ${chasing}${inMart(p) ? ' · 마트 안' : ''}`, x0, y0 + h + 16);
+      ctx.fillText(`좀비 ${run.zombies.length} · 추격 중 ${chasing}${inRect(p, this.map.indoor) ? ` · ${this.map.labels.inside}` : ''}`, x0, y0 + h + 16);
       ctx.fillText(`시야 ${Math.round(zombieSight(run) / 10)}m`, x0 + w - 56, y0 + h + 16);
     }
   }

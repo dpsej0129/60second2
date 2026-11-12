@@ -119,7 +119,7 @@ export function morningStatus(game) {
   return lines;
 }
 
-/** 60초 탐색에서 들고 온 것: '통조림 3개, 생수 2개' */
+/** 80초 탐색에서 들고 온 것: '통조림 3개, 생수 2개' */
 export function itemSummary(ids) {
   const counts = new Map();
   for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);

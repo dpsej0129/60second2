@@ -2,14 +2,23 @@
 // 게임 코드가 아니라 검증 도구다.
 import { PICK_RANGE } from '../../src/core/constants.js';
 import { pickupPreview, playerSpeed } from '../../src/core/run.js';
-import { HOME_ZONE, SHELVES, WORLD, collides, dist, moveCircle } from '../../src/core/world.js';
+import { MART_MAP, WORLD, collides as collidesWith, dist, moveCircle as moveWith } from '../../src/core/world.js';
 
 const CELL = 16;
 const INFLATE = 17;
-let cachedGrid = null;
+const grids = new WeakMap();
+
+// 지금 봇이 움직이는 지도(마트 또는 이사 지도). 길 찾기·충돌 검사가 이 지도를 쓴다.
+let current = MART_MAP;
+export function useMap(map) {
+  current = map ?? MART_MAP;
+}
+const collides = (x, y, r) => collidesWith(x, y, r, current.solids);
+const moveCircle = (e, dx, dy) => moveWith(e, dx, dy, current.solids);
 
 export function buildGrid() {
-  if (cachedGrid) return cachedGrid;
+  const cached = grids.get(current.solids);
+  if (cached) return cached;
   const cols = Math.ceil(WORLD.w / CELL);
   const rows = Math.ceil(WORLD.h / CELL);
   const blocked = new Uint8Array(cols * rows);
@@ -18,8 +27,9 @@ export function buildGrid() {
       if (collides(c * CELL + CELL / 2, r * CELL + CELL / 2, INFLATE)) blocked[r * cols + c] = 1;
     }
   }
-  cachedGrid = { cols, rows, blocked };
-  return cachedGrid;
+  const grid = { cols, rows, blocked };
+  grids.set(current.solids, grid);
+  return grid;
 }
 
 class Heap {
@@ -182,7 +192,7 @@ export function standPoint(shelf, from) {
   return candidates[0];
 }
 
-export const HOME_TARGET = { x: HOME_ZONE.x + HOME_ZONE.w / 2, y: HOME_ZONE.y + HOME_ZONE.h / 2 };
+export const homeTarget = (map = current) => ({ x: map.homeZone.x + map.homeZone.w / 2, y: map.homeZone.y + map.homeZone.h / 2 });
 
 /**
  * 계획(steps)을 차례로 수행하는 봇. 단계:
@@ -212,7 +222,7 @@ export class RunBot {
     Object.assign(this, { chaseRadius, wanderRadius, predictRadius, cost, threatChase, threatWander, margin });
     // 선반 id 문자열 목록도 받는다(그 뒤에 집으로 들어가기).
     this.steps = plan.map((step) =>
-      typeof step === 'string' ? { type: 'shelf', shelf: SHELVES.find((s) => s.id === step) } : step,
+      typeof step === 'string' ? { type: 'shelf', shelf: MART_MAP.shelves.find((s) => s.id === step) } : step,
     );
     if (!this.steps.some((s) => s.type === 'enter')) this.steps.push({ type: 'enter' });
     this.avoidZombies = avoidZombies;
@@ -244,6 +254,7 @@ export class RunBot {
   }
 
   next(run) {
+    useMap(run.map);
     if (this.pickedCount == null) this.pickedCount = run.picked.length;
     if (run.picked.length !== this.pickedCount) {
       this.pickedCount = run.picked.length;
@@ -254,7 +265,7 @@ export class RunBot {
 
     // 남은 시간이 집까지 가기 빠듯하면 바로 돌아간다(실제 경로 길이 기준, 0.5초마다 다시 잰다).
     if (this.homeEtaAt == null || run.elapsed - this.homeEtaAt >= 0.5) {
-      const route = findPath(run.player, HOME_TARGET);
+      const route = findPath(run.player, homeTarget());
       let length = 0;
       let prev = run.player;
       for (const p of route) {
@@ -282,7 +293,7 @@ export class RunBot {
     }
     if (this.hurried) step = { type: 'enter' };
 
-    let target = HOME_TARGET;
+    let target = homeTarget();
     let ground = null;
     if (step.type === 'shelf') target = standPoint(step.shelf, run.player);
     if (step.type === 'ground') {
@@ -401,7 +412,7 @@ RunBot.prototype.bestEscape = function bestEscape(run, wantX, wantY) {
  * 여러 번 오가는 계획을 만든다. legs: [['radio', 'water'], ['dad'], ['mom', 'sis'], ...]
  * 각 묶음을 집은 뒤 집에 내려놓고, 마지막에 집으로 들어간다. 가족 id는 바닥에서 데려간다.
  */
-export function scramblePlan(legs, martStock) {
+export function scramblePlan(legs, martStock, map = MART_MAP) {
   const remaining = { ...martStock };
   const steps = [];
   for (const leg of legs) {
@@ -410,7 +421,7 @@ export function scramblePlan(legs, martStock) {
         steps.push({ type: 'ground', id });
         continue;
       }
-      const shelf = SHELVES.find((s) => s.itemId === id && remaining[s.id] > 0);
+      const shelf = map.shelves.find((s) => s.itemId === id && remaining[s.id] > 0);
       if (!shelf) continue;
       remaining[shelf.id] -= 1;
       steps.push({ type: 'shelf', shelf });
@@ -422,11 +433,11 @@ export function scramblePlan(legs, martStock) {
 }
 
 /** 물품 id 목록 → 그 물품이 남아 있는 선반 id 목록 */
-export function shelvesFor(itemIds, martStock) {
+export function shelvesFor(itemIds, martStock, map = MART_MAP) {
   const remaining = { ...martStock };
   const out = [];
   for (const itemId of itemIds) {
-    const shelf = SHELVES.find((s) => s.itemId === itemId && remaining[s.id] > 0);
+    const shelf = map.shelves.find((s) => s.itemId === itemId && remaining[s.id] > 0);
     if (!shelf) continue;
     remaining[shelf.id] -= 1;
     out.push(shelf.id);

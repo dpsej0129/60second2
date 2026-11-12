@@ -1,5 +1,5 @@
 // 실시간 구간 밖의 화면들: 시작, 집 생존(하루 단위), 결말.
-import { EXPEDITION_DAYS, HUNGER_DEATH, THIRST_DEATH } from '../core/constants.js';
+import { EXPEDITION_DAYS, HUNGER_DEATH, RUN_SECONDS, THIRST_DEATH } from '../core/constants.js';
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_ORDER } from '../core/difficulty.js';
 import { ENDING_ORDER, ENDINGS, epilogue } from '../core/endings.js';
 import { RESOURCES, portions } from '../core/items.js';
@@ -30,11 +30,11 @@ export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY, discovered 
   return `
     <section class="title-screen" data-screen="title">
       <p class="kicker">좀비 생존 게임</p>
-      <h1>마트 탈출 <span>60초</span></h1>
+      <h1>마트 탈출 <span>${RUN_SECONDS}초</span></h1>
       <p class="tagline">정전된 대형 마트, 몰려드는 좀비, 그리고 집 주변에 흩어진 가족.<br />
-        60초 안에 내린 선택이 남은 날들을 결정한다.</p>
+        ${RUN_SECONDS}초 안에 내린 선택이 남은 날들을 결정한다.</p>
       <ol class="rules">
-        <li><b>60초</b> — 마트와 집을 오가며 4칸 가방으로 물자를 나른다. 집 앞에 들어서면 가방이 비워지니 몇 번이고 다시 다녀올 수 있다. 60초가 끝날 때 집 앞에 있어야 산다.</li>
+        <li><b>${RUN_SECONDS}초</b> — 마트와 집을 오가며 4칸 가방으로 물자를 나른다. 집 앞에 들어서면 가방이 비워지니 몇 번이고 다시 다녀올 수 있다. ${RUN_SECONDS}초가 끝날 때 집 앞에 있어야 산다.</li>
         <li><b>가족</b> — 집 주변에 흩어져 숨은 가족 3명도 칸을 차지한다. 물자와 가족 중 무엇을 먼저 옮길지 정하자.</li>
         <li><b>생존</b> — 통조림 한 캔, 물 한 병을 네 번에 나눠 먹으며 버틴다. 물자가 모자라면 한 명을 탐사로 내보낸다. 무엇을 들고 올지, 돌아오기는 할지 아무도 모른다.</li>
         <li><b>일지</b> — 하루하루가 공책에 적힌다. 버티기만 해서는 끝나지 않는다. 사건에 귀 기울이다 보면 이곳을 벗어날 기회가 온다. 결말은 하나가 아니다.</li>
@@ -94,7 +94,7 @@ function diaryPage(game, ui) {
           ${nav(pages[idx + 1]?.day, '다음 쪽', '▶')}
         </nav>
       </header>
-      ${when(recap, () => `<section class="diary-part" data-part="recap"><p class="diary-label">${page.day === 1 ? '60초' : '어제'}</p>${recap}</section>`)}
+      ${when(recap, () => `<section class="diary-part" data-part="recap"><p class="diary-label">${page.day === 1 ? `${RUN_SECONDS}초` : '어제'}</p>${recap}</section>`)}
       <section class="diary-part" data-part="morning"><p class="diary-label">아침</p>${news}${status}</section>
       ${when(later, () => `<section class="diary-part" data-part="today"><p class="diary-label">오늘</p>${later}</section>`)}
       ${when(!isToday, () => `<button type="button" class="btn ghost small back-today" data-action="page" data-page="">오늘 쪽으로 돌아가기 →</button>`)}

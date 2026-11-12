@@ -6,6 +6,7 @@
 //   ?debug=1          window.game 으로 게임 상태 노출
 //   ?timescale=2      실시간 구간 속도 배율(검증용)
 //   ?zombies=off      좀비 없이(흐름 확인용)
+import { RUN_SECONDS } from './core/constants.js';
 import { DEFAULT_DIFFICULTY, DIFFICULTIES } from './core/difficulty.js';
 import { Game } from './core/game.js';
 import { randomSeed } from './core/rng.js';
@@ -38,6 +39,7 @@ const codex = {
   },
 };
 
+const TITLE = `마트 탈출 ${RUN_SECONDS}초`;
 const params = new URLSearchParams(location.search);
 const OPTIONS = {
   seed: params.get('seed') ? Number(params.get('seed')) : null,
@@ -65,7 +67,7 @@ class App {
     this.teardown();
     this.game = null;
     this.root.innerHTML = renderTitle({ seed, difficulty: this.difficulty, discovered: codex.load() });
-    document.title = '마트 탈출 60초';
+    document.title = TITLE;
   }
 
   newGame(seed) {
@@ -124,7 +126,7 @@ class App {
       }
       this.root.innerHTML = renderEnding(game, { discovered: codex.load(), isNew: this.newEnding });
     }
-    document.title = game.phase === 'home' ? `${game.day}일차 · 마트 탈출 60초` : '마트 탈출 60초';
+    document.title = game.phase === 'home' ? `${game.day}일차 · ${TITLE}` : TITLE;
   }
 
   onSubmit(e) {

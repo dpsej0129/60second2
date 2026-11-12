@@ -1,9 +1,9 @@
-// 60초 탐색 시뮬레이션: 마트와 집을 오가며 물자와 가족을 집으로 옮긴다.
+// 실시간 구간 시뮬레이션: 마트(또는 이사할 때 옛집)와 도착지를 오가며 물자와 가족을 옮긴다.
 // DOM과 무관한 순수 로직이라 테스트에서 그대로 돌릴 수 있다.
 //
 // - 집 앞 도착 구역에 들어가면 가방 속 물품·가족을 집에 내려놓고, 시간은 계속 흐른다.
 // - 도착 구역에서 E를 누르면 집에 들어가 문을 잠근다(탐색 종료).
-// - 60초가 끝날 때 도착 구역 안에 있으면 무사, 밖에 있으면 패배.
+// - 제한 시간이 끝날 때 도착 구역 안에 있으면 무사, 밖에 있으면 패배.
 import {
   INJURY_SPEED_PENALTY,
   PICK_RANGE,
@@ -17,22 +17,7 @@ import {
 import { DIFFICULTIES } from './difficulty.js';
 import { carryInfo, isPerson } from './inventory.js';
 import { josa } from './text.js';
-import {
-  HOME_DOOR,
-  HOME_ZONE,
-  MART_DOORS,
-  MART_INNER,
-  SHELVES,
-  SOLIDS,
-  START,
-  STREET,
-  collides,
-  dist,
-  inMart,
-  inRect,
-  lineOfSight,
-  moveCircle,
-} from './world.js';
+import { MART_MAP, collides, dist, inRect, lineOfSight, moveCircle } from './world.js';
 
 /** 좀비 수·속도·시야의 기준값(하드). 실제 값은 난이도(difficulty.js)가 정한다. */
 export const RUN_DANGER = DIFFICULTIES.hard.run;
@@ -43,9 +28,6 @@ export const LOSE_SIGHT_FACTOR = 1.5; // 쫓던 좀비는 시야의 이 배수�
 export const WANDER_SPEED_FACTOR = 0.35;
 export const SCATTER_RADIUS = 300; // 문간에 들어서면 이 거리 안의 좀비가 흥미를 잃고 흩어진다
 export const SCATTER_SECONDS = 2.5; // 흩어지는 동안에는 다시 알아채지 못한다
-
-// 좀비는 집 앞 도착 구역(문간)에 들어오지 못한다.
-const ZOMBIE_SOLIDS = [...SOLIDS, HOME_ZONE];
 
 /** 지금 이 순간 좀비의 시야 반경 */
 export function zombieSight(run) {
@@ -58,22 +40,36 @@ export function noticesPlayer(run, z, sight = zombieSight(run)) {
   const d = dist(z, run.player);
   if (d > sight) return false;
   if (run.pickup && d <= sight * HEARING_FACTOR) return true;
-  return lineOfSight(z, run.player);
+  return lineOfSight(z, run.player, run.map.solids);
 }
 
 /**
- * family: 집 주변에 흩어진 가족 [{ id, x, y }] — 바닥에 놓인 '주울 것'으로 시작한다.
+ * family: 지도에 흩어진 가족 [{ id, x, y }] — 바닥에 놓인 '주울 것'으로 시작한다.
+ * map: 마트 지도(처음 80초) 또는 이사 지도. martStock: 그 지도의 선반 재고 { 선반 id: 수량 }
  */
-export function createRun({ inventory, martStock, rng, family = [], playerHealth = 0, zombies = true, danger = null }) {
+export function createRun({
+  inventory,
+  martStock,
+  rng,
+  family = [],
+  playerHealth = 0,
+  zombies = true,
+  danger = null,
+  map = MART_MAP,
+  duration = RUN_SECONDS,
+  kind = 'mart',
+}) {
   const d = { ...RUN_DANGER, ...danger };
   const run = {
+    kind, // 'mart'(처음 80초) | 'move'(이사)
+    map,
     danger: d,
-    duration: RUN_SECONDS,
+    duration,
     elapsed: 0,
-    timeLeft: RUN_SECONDS,
+    timeLeft: duration,
     outcome: null, // 'home' | 'caught' | 'timeout'
     endedBy: null, // 'enter'(스스로 집에 들어감) | 'time'(시간이 끝날 때 집 앞에 있었음)
-    player: { x: START.x, y: START.y, r: PLAYER_RADIUS, faceX: 1, faceY: 0 },
+    player: { x: map.start.x, y: map.start.y, r: PLAYER_RADIUS, faceX: 1, faceY: 0 },
     playerHealth,
     zombies: [],
     nextZombieId: 1,
@@ -91,7 +87,7 @@ export function createRun({ inventory, martStock, rng, family = [], playerHealth
     zombiesEnabled: zombies,
   };
   if (zombies) {
-    for (let i = 0; i < d.martZombies; i++) spawnZombie(run, 'mart-front');
+    for (let i = 0; i < d.martZombies; i++) spawnZombie(run, map.spawnInside ? 'inside' : 'street');
     for (let i = 0; i < d.streetZombies; i++) spawnZombie(run, 'street');
   }
   return run;
@@ -107,7 +103,7 @@ export function playerSpeed(run) {
 export function nearestPickup(run) {
   let best = null;
   let bestDist = PICK_RANGE;
-  for (const shelf of SHELVES) {
+  for (const shelf of run.map.shelves) {
     const d = dist(run.player, shelf);
     if (d <= bestDist) {
       best = { kind: 'shelf', shelf, id: shelf.itemId };
@@ -194,8 +190,8 @@ export function dropItem(run, index) {
   const id = run.inventory.removeAt(index);
   if (!id) return null;
   const info = carryInfo(id);
-  if (!isPerson(id) && inMart(run.player)) {
-    const shelf = SHELVES.find((s) => s.itemId === id);
+  const shelf = !isPerson(id) && inRect(run.player, run.map.indoor) ? run.map.shelves.find((s) => s.itemId === id) : null;
+  if (shelf) {
     run.martStock[shelf.id] = (run.martStock[shelf.id] ?? 0) + 1;
     toast(run, `${josa(info.name, '을/를')} 선반에 되돌려 놓았다`);
   } else {
@@ -256,13 +252,13 @@ export function stepRun(run, dt, input = {}) {
   }
   if (!run.pickup && moving) {
     const speed = playerSpeed(run);
-    moveCircle(run.player, mx * speed * dt, my * speed * dt);
+    moveCircle(run.player, mx * speed * dt, my * speed * dt, run.map.solids);
     run.player.faceX = mx;
     run.player.faceY = my;
   }
 
   const wasHome = run.atHome;
-  run.atHome = inRect(run.player, HOME_ZONE);
+  run.atHome = inRect(run.player, run.map.homeZone);
   if (run.atHome && !wasHome) scatterZombies(run);
   if (run.atHome && !run.pickup) deliverAll(run);
 
@@ -287,11 +283,12 @@ export function stepRun(run, dt, input = {}) {
 
 /** 문간에 들어서면 집 근처 좀비가 먹잇감을 놓치고 흩어진다. 다시 나갈 틈이 생긴다. */
 function scatterZombies(run) {
+  const door = run.map.homeDoor;
   for (const z of run.zombies) {
     z.chasing = false;
-    const d = dist(z, HOME_DOOR);
+    const d = dist(z, door);
     if (d > SCATTER_RADIUS) continue;
-    const away = Math.atan2(z.y - HOME_DOOR.y, z.x - HOME_DOOR.x) + run.rng.float(-0.5, 0.5);
+    const away = Math.atan2(z.y - door.y, z.x - door.x) + run.rng.float(-0.5, 0.5);
     z.scatter = SCATTER_SECONDS;
     z.detour = SCATTER_SECONDS;
     z.detourX = Math.cos(away);
@@ -300,26 +297,28 @@ function scatterZombies(run) {
 }
 
 function randomPoint(run, area, minDistance) {
-  const { rng } = run;
+  const { rng, map } = run;
+  const street = map.street;
   for (let attempt = 0; attempt < 60; attempt++) {
     let p;
-    if (area === 'mart-front') {
-      p = { x: rng.float(470, MART_INNER.x + MART_INNER.w - 16), y: rng.float(MART_INNER.y + 16, MART_INNER.y + MART_INNER.h - 16) };
+    if (area === 'inside') {
+      const a = map.spawnInside;
+      p = { x: rng.float(a.x, a.x + a.w), y: rng.float(a.y, a.y + a.h) };
     } else if (area === 'edge') {
-      p = { x: rng.float(STREET.x, STREET.x + STREET.w), y: rng.chance(0.5) ? STREET.y : STREET.y + STREET.h };
+      p = { x: rng.float(street.x, street.x + street.w), y: rng.chance(0.5) ? street.y : street.y + street.h };
     } else {
-      p = { x: rng.float(STREET.x, STREET.x + STREET.w), y: rng.float(STREET.y, STREET.y + STREET.h) };
+      p = { x: rng.float(street.x, street.x + street.w), y: rng.float(street.y, street.y + street.h) };
     }
-    if (collides(p.x, p.y, ZOMBIE_RADIUS + 2, ZOMBIE_SOLIDS)) continue;
+    if (collides(p.x, p.y, ZOMBIE_RADIUS + 2, map.zombieSolids)) continue;
     if (dist(p, run.player) < minDistance) continue;
-    if (dist(p, HOME_DOOR) < 260) continue;
+    if (dist(p, map.homeDoor) < 260) continue;
     return p;
   }
   return null;
 }
 
 export function spawnZombie(run, area, at = null) {
-  const minDistance = area === 'street' || area === 'edge' ? 380 : 300;
+  const minDistance = area === 'inside' ? 300 : 380;
   const p = at ?? randomPoint(run, area, minDistance);
   if (!p) return null;
   const { rng, danger } = run;
@@ -354,13 +353,13 @@ function nearDoor(z, door) {
   return z.x > gap.x + z.r && z.x < gap.x + gap.w - z.r && Math.abs(z.y - (gap.y + gap.h / 2)) < 60;
 }
 
-/** 마트 안팎이 다르면 가장 가까운 출입구를 거쳐 쫓아온다. */
-function chaseTarget(z, player) {
-  const zIn = inMart(z);
-  if (zIn === inMart(player)) return player;
+/** 건물 안팎이 다르면 가장 가까운 출입구를 거쳐 쫓아온다. */
+function chaseTarget(z, player, map) {
+  const zIn = inRect(z, map.indoor);
+  if (zIn === inRect(player, map.indoor)) return player;
   let best = null;
   let bestCost = Infinity;
-  for (const door of MART_DOORS) {
+  for (const door of map.doors) {
     const near = zIn ? door.inside : door.outside;
     const cost = dist(z, near) + dist(door.outside, player) + dist(door.inside, player) * 0.01;
     if (cost < bestCost) {
@@ -400,7 +399,7 @@ function updateZombies(run, dt) {
     } else {
       let target;
       if (z.chasing) {
-        target = chaseTarget(z, player);
+        target = chaseTarget(z, player, run.map);
       } else {
         // 어슬렁거리기
         z.wanderTimer -= dt;
@@ -419,7 +418,7 @@ function updateZombies(run, dt) {
     const step = speed * dt;
     const bx = z.x;
     const by = z.y;
-    moveCircle(z, dx * step, dy * step, ZOMBIE_SOLIDS);
+    moveCircle(z, dx * step, dy * step, run.map.zombieSolids);
     if (Math.hypot(z.x - bx, z.y - by) < step * 0.3) {
       z.stuck += dt;
       if (z.stuck > 0.4) {
@@ -446,8 +445,8 @@ function updateZombies(run, dt) {
       if (overlap > 0 && d > 0.001) {
         const nx = (a.x - b.x) / d;
         const ny = (a.y - b.y) / d;
-        moveCircle(a, (nx * overlap) / 2, (ny * overlap) / 2, ZOMBIE_SOLIDS);
-        moveCircle(b, (-nx * overlap) / 2, (-ny * overlap) / 2, ZOMBIE_SOLIDS);
+        moveCircle(a, (nx * overlap) / 2, (ny * overlap) / 2, run.map.zombieSolids);
+        moveCircle(b, (-nx * overlap) / 2, (-ny * overlap) / 2, run.map.zombieSolids);
       }
     }
   }

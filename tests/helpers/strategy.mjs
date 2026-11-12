@@ -139,7 +139,7 @@ export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
 
 /** 실시간 구간을 봇으로 끝까지 진행한다. */
 export function playScramble(game, legs, botOptions) {
-  const bot = new RunBot(scramblePlan(legs, game.martStock), botOptions);
+  const bot = new RunBot(scramblePlan(legs, game.run.martStock, game.run.map), botOptions);
   let guard = 0;
   while (game.phase === 'run' && guard++ < 10000) game.stepRun(SIM_STEP, bot.next(game.run));
   return game.lastRun;
