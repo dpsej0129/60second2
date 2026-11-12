@@ -12,7 +12,7 @@ import {
   THIRST_DEATH,
   THIRST_WEAK,
 } from './constants.js';
-import { DEFAULT_DIFFICULTY, difficultyOf } from './difficulty.js';
+import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_ORDER, difficultyOf } from './difficulty.js';
 import { ENDINGS } from './endings.js';
 import { CHAINS, EVENT_DEFS, MISSIONS, PATHS, RANDOM_EVENTS } from './events/index.js';
 import { chainMissedNote } from './events/chains.js';
@@ -41,6 +41,15 @@ import { josa } from './text.js';
 import { MOVE_SECONDS, createMartMap, createMoveMap, initialMartStock, movingGoods } from './world.js';
 
 const evaluate = (value, ...args) => (typeof value === 'function' ? value(...args) : value);
+
+/**
+ * 이사할 때의 좀비: 해가 떠 있는 동안 옮기므로 한 단계 낮은 난이도의 거리 좀비만 나온다(우리 집 안에는 없다).
+ */
+export function moveDanger(difficultyId) {
+  const index = Math.max(0, DIFFICULTY_ORDER.indexOf(difficultyId) - 1);
+  const run = DIFFICULTIES[DIFFICULTY_ORDER[index]].run;
+  return { ...run, martZombies: 0, maxZombies: Math.max(3, run.maxZombies - (difficultyId === 'easy' ? 1 : 0)) };
+}
 
 export class Game {
   constructor({ seed = randomSeed(), zombies = true, difficulty = DEFAULT_DIFFICULTY } = {}) {
@@ -231,7 +240,7 @@ export class Game {
       playerHealth: this.me.health,
       family: move.family,
       zombies: this.zombies,
-      danger: this.difficulty.run,
+      danger: moveDanger(this.difficulty.id),
     });
     this.run.familyIds = move.familyIds;
     this.phase = 'run';

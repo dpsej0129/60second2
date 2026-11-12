@@ -29,9 +29,12 @@ export const WANDER_SPEED_FACTOR = 0.35;
 export const SCATTER_RADIUS = 300; // 문간에 들어서면 이 거리 안의 좀비가 흥미를 잃고 흩어진다
 export const SCATTER_SECONDS = 2.5; // 흩어지는 동안에는 다시 알아채지 못한다
 
-/** 지금 이 순간 좀비의 시야 반경 */
+/** 좀비 떼가 불어나는 빠르기의 기준 길이(초). 구간이 더 길면 그만큼 천천히 불어난다. */
+export const PACE_SECONDS = 60;
+
+/** 지금 이 순간 좀비의 시야 반경(구간이 끝날 무렵의 넓이는 길이와 상관없이 같다) */
 export function zombieSight(run) {
-  return run.danger.sight + run.elapsed * SIGHT_GROWTH_PER_SECOND;
+  return run.danger.sight + run.elapsed * SIGHT_GROWTH_PER_SECOND * run.pace;
 }
 
 /** 쫓고 있지 않던 좀비가 플레이어를 알아채는지: 시야 안 + 가리는 것 없음, 또는 물건 집는 소리 */
@@ -60,9 +63,12 @@ export function createRun({
   kind = 'mart',
 }) {
   const d = { ...RUN_DANGER, ...danger };
+  const pace = PACE_SECONDS / duration;
+  d.spawnInterval /= pace; // 긴 구간일수록 새 좀비가 드문드문 나타난다
   const run = {
     kind, // 'mart'(처음 80초) | 'move'(이사)
     map,
+    pace,
     danger: d,
     duration,
     elapsed: 0,

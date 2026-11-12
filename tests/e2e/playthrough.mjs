@@ -296,10 +296,17 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
     const afterDay = await page.evaluate(() => ({ day: window.game.day, food: window.game.stock.food, water: window.game.stock.water, phase: window.game.phase }));
     if (afterDay.phase === 'home') {
       assert.equal(afterDay.day, beforeDay.day + 1);
-      // 탐사자가 물자를 들고 오는 아침이 아니면, 밤사이 재고 변화는 배급한 만큼의 소비뿐이다
+      // 탐사자가 물자를 들고 오는 아침이 아니면, 밤사이 재고 변화는 배급한 만큼의 소비뿐이다.
+      // 밤사이 사건(쥐·빗물·물탱크 등)으로 재고가 바뀌었다면 그 일이 지난밤 기록에 적혀 있어야 한다.
       if (!beforeDay.returning) {
-        assert.equal(beforeDay.food - afterDay.food, beforeDay.f, '배급한 식량만큼 소비');
-        assert.equal(beforeDay.water - afterDay.water, beforeDay.w, '배급한 물만큼 소비');
+        const nightNote = await page.evaluate(() => window.game.nightReport.join(' '));
+        const touched = /쥐가|냄비에|물탱크|지붕 위|물병 몇 개|습기|사라졌다/.test(nightNote);
+        if (!touched) {
+          assert.equal(beforeDay.food - afterDay.food, beforeDay.f, '배급한 식량만큼 소비');
+          assert.equal(beforeDay.water - afterDay.water, beforeDay.w, '배급한 물만큼 소비');
+        } else {
+          checks.nightEvents = (checks.nightEvents ?? 0) + 1;
+        }
       }
     }
   }
