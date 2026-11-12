@@ -107,18 +107,16 @@ test('방공호에서는 불이 나지 않고, 약탈자가 찾아오지 않고,
   stageEvent(game, 'horde');
   game.chooseOption('hold');
   assert.equal(game.ending, null, '철문이 버틴다');
-  game.nightEvents = true;
   game.director.randomEvents = [];
   game.director.pick = () => null;
-  let tank = 0;
-  for (let d = 0; d < 30 && game.phase === 'home'; d++) {
+  for (let d = 0; d < 20 && game.phase === 'home'; d++) {
     game.setAllRations(true);
     game.stock.food = 40;
     game.stock.water = 40;
     game.endDay();
-    if (game.nightHistory.tank === game.day - 1) tank += 1;
   }
-  assert.ok(tank >= 2, `물탱크 ${tank}번`);
+  const tank = game.log.filter((e) => /물탱크 꼭지/.test(e.text)).length;
+  assert.ok(tank >= 4, `20밤 중 물탱크 ${tank}번`);
 });
 
 test('실제 플레이: 봇이 방공호로 이사하고 계속 버틴다', () => {

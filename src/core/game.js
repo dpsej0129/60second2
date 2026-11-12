@@ -17,7 +17,7 @@ import { ENDINGS } from './endings.js';
 import { CHAINS, EVENT_DEFS, MISSIONS, PATHS, RANDOM_EVENTS } from './events/index.js';
 import { chainMissedNote } from './events/chains.js';
 import { EventDirector } from './events/director.js';
-import { rollNightEvent } from './events/night.js';
+import { rollNightEvent, tankDrip } from './events/night.js';
 import { expeditionRisk, rollItems, rollLoot } from './expedition.js';
 import { Inventory, isPerson } from './inventory.js';
 import { itemSummary, mealLines, morningStatus, nameList } from './journal.js';
@@ -428,7 +428,8 @@ export class Game {
     }
     if (open('group') && s.med < 1 && this.director.chains.group.stage <= 1) out.push('bandage');
     if (open('safezone') && this.director.chains.safezone.stage <= 1 && s.map < 1 && !isCapable(this.person('dad'))) out.push('roadmap');
-    if (open('train') && s.med < 1 && this.presentPeople().some((p) => p.health > 0)) out.push('bandage');
+    // 다친 식구가 있는데 구급약이 없으면, 탐사자는 약부터 찾아본다
+    if (s.med < 1 && this.presentPeople().some((p) => p.health > 0)) out.push('bandage');
     if (open('caravan')) {
       const stage = this.director.chains.caravan.stage;
       if (stage <= 1 && !isCapable(sis) && !s.toolkit && !s.fuel) out.push('toolkit');
@@ -897,6 +898,8 @@ export class Game {
     // 밤사이 저절로 일어나는 일(쥐, 빗물, 잠 못 든 밤…)
     const night = this.nightEvents ? rollNightEvent(this, this.rng.outcome) : null;
     if (night) report.push({ text: night.text, tone: night.tone });
+    const tank = tankDrip(this, this.rng.outcome); // 방공호에 살면 물탱크에서 물이 고인다
+    if (tank) report.push({ text: tank.text, tone: tank.tone });
     const lostMind = this.updateMoods(present, report);
     this.checkDeaths(report);
     if (lostMind && !this.ending) this.setEnding('madness');

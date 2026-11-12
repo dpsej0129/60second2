@@ -111,7 +111,9 @@ test('열린 탈출 경로에 필요한 물품은 조금 더 잘 나온다', () 
   assert.ok(count(['flare']) > count([]) * 1.8);
 
   const game = homeGame({ seed: 5, stock: { food: 9, water: 9, radio: 1, battery: 1 } });
-  assert.deepEqual(game.neededItems(), [], '열린 경로가 없으면 특별히 필요한 것도 없다');
+  assert.deepEqual(game.neededItems(), ['bandage'], '다친 동생이 있는데 구급약이 없으면 약부터 찾는다');
+  game.person('sis').health = 0;
+  assert.deepEqual(game.neededItems(), [], '열린 경로도 다친 사람도 없으면 특별히 필요한 것이 없다');
   game.director.chains.rescue.opened = true;
   assert.deepEqual(game.neededItems(), ['flare']);
   game.director.chains.car.opened = true;

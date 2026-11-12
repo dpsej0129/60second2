@@ -41,7 +41,7 @@ test('난이도가 오를수록 탐사가 위험하고 덜 들고 오며, 상처
   );
   assert.deepEqual(
     games.map((g) => g.difficulty.worsenDays),
-    [4, 3, 2],
+    [5, 4, 3],
   );
 });
 

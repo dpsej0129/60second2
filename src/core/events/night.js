@@ -75,8 +75,8 @@ export const NIGHT_EVENTS = [
   },
   {
     id: 'damp',
-    weight: 1.2,
-    when: (game) => game.stock.med > 0,
+    weight: 0.6,
+    when: (game) => game.stock.med >= 2, // 마지막 하나는 꼭 싸 두었다
     run(game) {
       take(game, 'med', 1);
       return { text: '밤새 습기가 차 구급약 하나가 곰팡이로 못 쓰게 됐다.', tone: 'bad' };
@@ -122,24 +122,13 @@ export const NIGHT_EVENTS = [
   },
   {
     id: 'night_fever',
-    weight: 0.8,
+    weight: 0.5,
     when: (game) => family(game).some((p) => p.health === 0),
     run(game, rng) {
       const p = rng.pick(family(game).filter((q) => q.health === 0));
-      if (!rng.chance(0.5 * game.difficulty.harm)) return { text: `${josa(p.name, '이/가')} 밤새 식은땀을 흘렸지만, 아침에는 열이 내렸다.`, tone: '' };
+      if (!rng.chance(0.3 * game.difficulty.harm)) return { text: `${josa(p.name, '이/가')} 밤새 식은땀을 흘렸지만, 아침에는 열이 내렸다.`, tone: '' };
       p.health = 1;
       return { text: `${josa(p.name, '이/가')} 밤새 열에 시달렸다. 아침에도 일어나지 못한다.`, tone: 'bad' };
-    },
-  },
-  {
-    id: 'tank',
-    weight: 2.5,
-    good: true,
-    when: (game) => game.flags.shelter === 'bunker',
-    run(game, rng) {
-      const got = rng.int(1, 3);
-      game.stock.water += got;
-      return { text: `방공호 물탱크 꼭지에서 밤새 물이 떨어졌다. 아침까지 ${formatAmount('water', got)}만큼 받아 두었다.`, tone: 'good' };
     },
   },
   // ── 아포칼립스에서만 ─────────────────────────
@@ -154,25 +143,33 @@ export const NIGHT_EVENTS = [
   },
   {
     id: 'roof_steps',
-    weight: 1.5,
+    weight: 0.8,
     apocalypse: true,
     when: (game) => game.stock.food >= CAN,
     run(game) {
-      take(game, 'food', CAN);
-      return { text: '무언가 지붕 위를 오갔다. 아침에 보니 환기구 덮개가 뜯겨 있고 통조림 하나가 사라졌다.', tone: 'bad' };
+      const lost = take(game, 'food', CAN / 2);
+      return { text: `무언가 지붕 위를 오갔다. 아침에 보니 환기구 덮개가 뜯겨 있고 ${josa(formatAmount('food', lost), '이/가')} 사라졌다.`, tone: 'bad' };
     },
   },
   {
     id: 'tainted_water',
-    weight: 1.5,
+    weight: 0.6,
     apocalypse: true,
     when: (game) => game.stock.water >= CAN,
     run(game) {
-      const lost = take(game, 'water', Math.ceil(game.stock.water * 0.25));
+      const lost = take(game, 'water', Math.ceil(game.stock.water * 0.15));
       return { text: `물병 몇 개가 밤사이 뿌옇게 변했다. 오염된 ${josa(formatAmount('water', lost), '을/를')} 버릴 수밖에 없었다.`, tone: 'bad' };
     },
   },
 ];
+
+/** 방공호 물탱크: 방공호에 살면 밤마다 따로 굴린다(다른 밤사이 사건과 겹칠 수 있다) */
+export function tankDrip(game, rng) {
+  if (game.flags.shelter !== 'bunker' || !rng.chance(0.4)) return null;
+  const got = rng.int(1, 3);
+  game.stock.water += got;
+  return { id: 'tank', text: `방공호 물탱크 꼭지에서 밤새 물이 떨어졌다. 아침까지 ${formatAmount('water', got)}만큼 받아 두었다.`, tone: 'good' };
+}
 
 /** 오늘 밤 일어날 수 있는 밤사이 사건 목록 */
 export function eligibleNightEvents(game) {

@@ -25,14 +25,18 @@ try {
 
 const log = (...args) => console.log(...args);
 
-/** 페이지 안에서 봇을 돌려 키보드 이벤트로 80초 탐색을 플레이한다. */
-async function driveScramble(page, target, bring) {
+/**
+ * 페이지 안에서 봇을 돌려 키보드 이벤트로 실시간 구간을 플레이한다.
+ * mode 'mart': 처음 80초(scrambleLegs), 'move': 이사(moveLegs — 카운트다운 전에 계획을 세운다)
+ */
+async function driveScramble(page, target, bring, mode = 'mart', legs = null) {
   return page.evaluate(
-    async ({ target, bring }) => {
+    async ({ target, bring, mode, legs }) => {
       const { RunBot, scramblePlan } = await import('/tests/helpers/bot.mjs');
       const { scrambleLegs } = await import('/tests/helpers/strategy.mjs');
       const game = window.game;
-      const bot = new RunBot(scramblePlan(scrambleLegs(target, bring), game.run.martStock, game.run.map), { arriveDistance: 10 });
+      const plan = legs ?? (mode === 'move' ? null : scrambleLegs(target, bring));
+      const bot = new RunBot(scramblePlan(plan, game.run.martStock, game.run.map), { arriveDistance: 10 });
       const held = new Set();
       const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
       const prompts = new Set();
@@ -81,8 +85,18 @@ async function driveScramble(page, target, bring) {
         requestAnimationFrame(tick);
       });
     },
-    { target, bring },
+    { target, bring, mode, legs },
   );
+}
+
+/** 이사하기로 했으면: 브리핑에서 계획을 세우고, Enter로 시작해 짐을 옮긴다. */
+async function driveMove(page) {
+  await page.waitForSelector('[data-screen="run"] [data-action="start-run"]');
+  assert.equal(await page.evaluate(() => window.game.pendingMove?.kind), 'move');
+  const legs = await page.evaluate(async () => (await import('/tests/helpers/strategy.mjs')).moveLegs(window.game));
+  await page.keyboard.press('Enter');
+  const result = await driveScramble(page, null, null, 'move', legs);
+  return result;
 }
 
 const strategy = (page, fn, ...args) =>
@@ -201,6 +215,19 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
       if (await page.$('.event-card.earlier')) checks.followUps = (checks.followUps ?? 0) + 1;
       const option = await strategy(page, 'chooseOption', target);
       await page.click(`[data-action="choose"][data-option="${option}"]`);
+      if (await page.evaluate(() => window.game.phase === 'ready')) {
+        // 다른 곳으로 이사: 새 지도에서 제한 시간 안에 짐과 식구를 옮긴다
+        const moved = await driveMove(page);
+        checks.move = `${moved.outcome}/${moved.endedBy ?? '-'} 물품 ${moved.items?.length ?? 0} 식구 ${moved.family?.join(',') || '없음'}`;
+        if (shotPrefix) await shot('8-after-move', true);
+        screen = await waitScreen(page, 'home', 'ending');
+        if (screen === 'ending') {
+          ended = true;
+          break;
+        }
+        assert.equal(await page.$eval('[data-ref="shelter"]', (el) => el.dataset.place), 'bunker', '집 안 장면이 방공호로 바뀐다');
+        continue;
+      }
       if (await page.evaluate(() => window.game.phase === 'ending')) {
         ended = true;
         break;

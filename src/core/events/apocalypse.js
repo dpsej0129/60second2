@@ -46,8 +46,8 @@ export const APOCALYPSE_EVENTS = [
         id: 'hide',
         label: '모두 욕실에 숨어 숨죽인다',
         resolve(ctx) {
-          const food = ctx.take('food', Math.ceil(ctx.game.stock.food * 0.3));
-          const water = ctx.take('water', Math.ceil(ctx.game.stock.water * 0.2));
+          const food = ctx.take('food', Math.ceil(ctx.game.stock.food * 0.2));
+          const water = ctx.take('water', Math.ceil(ctx.game.stock.water * 0.15));
           for (const p of family(ctx.game)) ctx.mood(p, +1);
           const lost = [food ? formatAmount('food', food) : '', water ? formatAmount('water', water) : ''].filter(Boolean).join(', ');
           return `문틈으로 그것이 거실을 헤집는 소리가 들렸다. 날이 밝고서야 나왔다.${lost ? ` 선반이 엉망이다. (${lost} 잃음)` : ''}`;
@@ -88,7 +88,7 @@ export const APOCALYPSE_EVENTS = [
         id: 'endure',
         label: '그냥 둔다',
         resolve(ctx) {
-          const lost = ctx.take('water', Math.ceil(ctx.game.stock.water * 0.3));
+          const lost = ctx.take('water', Math.ceil(ctx.game.stock.water * 0.2));
           return lost
             ? `새는 빗물이 물병 상자를 적셨다. 오염된 ${josa(formatAmount('water', lost), '을/를')} 버렸다.`
             : '새는 빗물이 바닥을 적셨다. 다행히 버릴 물도 없었다.';

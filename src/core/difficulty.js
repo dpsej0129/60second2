@@ -12,7 +12,7 @@ export const DIFFICULTIES = {
     run: { martZombies: 1, streetZombies: 1, spawnInterval: 14, maxZombies: 4, speedMin: 32, speedMax: 48, sight: 165 },
     expedition: { risk: 0.6, capacity: 5, found: [1, 4] },
     harm: 0.7,
-    worsenDays: 4,
+    worsenDays: 5,
     eventChance: 0.45,
   },
   hard: {
@@ -22,7 +22,7 @@ export const DIFFICULTIES = {
     run: { martZombies: 2, streetZombies: 2, spawnInterval: 9, maxZombies: 8, speedMin: 44, speedMax: 66, sight: 220 },
     expedition: { risk: 1, capacity: 4, found: [0, 3] },
     harm: 1,
-    worsenDays: 3,
+    worsenDays: 4,
     eventChance: 0.45,
   },
   apocalypse: {
@@ -30,9 +30,9 @@ export const DIFFICULTIES = {
     name: '아포칼립스',
     blurb: '거리가 좀비로 가득하다. 탐사는 목숨을 건 도박이고, 상처는 금세 덧난다.',
     run: { martZombies: 3, streetZombies: 3, spawnInterval: 7, maxZombies: 11, speedMin: 50, speedMax: 74, sight: 245 },
-    expedition: { risk: 1.5, capacity: 3, found: [0, 2] },
+    expedition: { risk: 1.35, capacity: 3, found: [1, 3] },
     harm: 1.35,
-    worsenDays: 2,
+    worsenDays: 3,
     eventChance: 0.55,
   },
 };
