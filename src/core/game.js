@@ -49,7 +49,17 @@ export class Game {
     this.difficulty = difficultyOf(difficulty);
     // 미션 등으로 생기는 지속 상태. dog: 떠돌이 개 보리와 함께 지냄, shortcut: 탐사 지름길을 앎
     // gangAnger: 약탈자 쪽지를 무시한 횟수, robes: 하얀 옷의 사람들이 찾아온 횟수
-    this.flags = { dog: false, shortcut: false, gangAnger: 0, gangGone: false, robes: 0, robesGone: false };
+    // hordeDay: 좀비 떼가 지나갈 날, barricade: 그 전에 문과 창을 막았는지
+    this.flags = {
+      dog: false,
+      shortcut: false,
+      gangAnger: 0,
+      gangGone: false,
+      robes: 0,
+      robesGone: false,
+      hordeDay: null,
+      barricade: false,
+    };
 
     this.phase = 'ready'; // ready → run → home → ending
     this.day = 0;
@@ -262,6 +272,7 @@ export class Game {
     }
     if (open('group') && s.med < 1 && this.director.chains.group.stage <= 1) out.push('bandage');
     if (open('safezone') && this.director.chains.safezone.stage <= 1 && s.map < 1 && !isCapable(this.person('dad'))) out.push('roadmap');
+    if (open('train') && s.med < 1 && this.presentPeople().some((p) => p.health > 0)) out.push('bandage');
     if (open('caravan')) {
       const stage = this.director.chains.caravan.stage;
       if (stage <= 1 && !isCapable(sis) && !s.toolkit && !s.fuel) out.push('toolkit');
@@ -867,7 +878,7 @@ export class Game {
     const def = ENDINGS[id];
     let text = def.text;
     if (id === 'died') text = `${josa(extra.cause, '으로/로')} 쓰러졌다. ${def.text}`;
-    if (extra.leftBehind?.length) text += ` 옥상에 남겨진 ${extra.leftBehind.join(', ')}의 모습이 눈에 밟힌다.`;
+    if (extra.leftBehind?.length) text += ` ${extra.leftPlace ?? '옥상에'} 남겨진 ${extra.leftBehind.join(', ')}의 모습이 눈에 밟힌다.`;
     // 집을 떠나는 결말이면, 그날 탐사를 나가 있던 사람은 함께 가지 못한다.
     const awayAtEscape = def.type !== 'defeat' ? this.people.filter((p) => p.status === 'away') : [];
     for (const p of awayAtEscape) {

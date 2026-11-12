@@ -3,6 +3,7 @@ import { LIFE_EVENTS } from './life.js';
 import { MISSIONS, MISSION_EVENTS } from './missions.js';
 import { RANDOM_EVENTS as BASE_EVENTS } from './random.js';
 import { VISITOR_EVENTS } from './visitors.js';
+import { CRISIS_EVENTS } from './crises.js';
 
 /** 탈출 경로(승리 조건)와 미션(곁가지 연쇄 사건)을 합친 전체 연쇄 사건 */
 export const CHAINS = [...PATHS, ...MISSIONS];
@@ -11,6 +12,7 @@ export const RANDOM_EVENTS = [
   ...BASE_EVENTS,
   ...LIFE_EVENTS,
   ...VISITOR_EVENTS,
+  ...CRISIS_EVENTS,
   ...MISSION_EVENTS.map((def) => ({ ...def, bonus: true })),
 ];
 

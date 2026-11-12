@@ -8,7 +8,7 @@ const CAN = SERVINGS;
 const tribute = (d) => `${formatAmount('food', d.food)}, ${formatAmount('water', d.water)}`;
 import { allOf, canTransmit, criticalPeople, needCapable, needStock } from './helpers.js';
 
-const OPENER_RETRIES = { rescue: 2, group: 1, car: 1, safezone: 1, caravan: 1 };
+const OPENER_RETRIES = { rescue: 2, group: 1, car: 1, safezone: 1, caravan: 1, train: 1 };
 
 const when = (chain) => (chain.status === 'active' ? '오늘' : `${chain.due}일차`);
 
@@ -828,7 +828,190 @@ const CARAVAN = {
   },
 };
 
-export const CHAINS = [RESCUE, GROUP, CAR, SAFEZONE, CARAVAN];
+// ── 마지막 피난 열차 ─────────────────────────────
+
+/** 상처가 있는 사람(검역에서 걸린다): 주인공 포함 */
+export function injuredPeople(game) {
+  return game.presentPeople().filter((p) => p.health > 0);
+}
+
+function trainOpened(ctx, lead) {
+  ctx.chain.open();
+  const day = ctx.chain.advance([8, 14]);
+  return `${lead} "중앙역 피난 열차 안내. 승차 등록은 역 앞 천막에서 받습니다." ${day}일차에 식구들 이름을 올리러 역에 다녀오기로 했다.`;
+}
+
+function registered(ctx, lead) {
+  const day = ctx.chain.advance([8, 14]);
+  return `${lead} "${day}일차 새벽 열차입니다. 타기 전에 검역을 합니다. 상처가 있는 사람은 태울 수 없어요." 등록증을 받아 왔다.`;
+}
+
+const TRAIN = {
+  id: 'train',
+  icon: '🚂',
+  title: '마지막 피난 열차',
+  openWindow: [40, 62],
+  initData: () => ({}),
+  stages: [
+    {
+      id: 'train_whistle',
+      title: '먼 기적 소리',
+      text: (game, params, chain) =>
+        chain.retries
+          ? '또 기적 소리가 들렸다. 지난번보다 가까운 것 같다.'
+          : '새벽, 먼 곳에서 기적 소리가 길게 울렸다. 이 도시에 아직 기차가 다닌다?',
+      options: [
+        {
+          id: 'radio',
+          label: '무전기로 철도 방송을 찾는다',
+          cost: '건전지 1',
+          check: allOf(needStock('radio'), needStock('battery')),
+          resolve(ctx) {
+            ctx.take('battery', 1);
+            return trainOpened(ctx, '다이얼을 한참 돌리자 딱딱한 안내 방송이 잡혔다. (건전지 -1)');
+          },
+        },
+        {
+          id: 'sis',
+          who: 'sis',
+          label: '동생이 라디오로 철도 무선을 잡는다',
+          cost: '건전지 1',
+          check: allOf(needCapable('sis'), needStock('battery')),
+          resolve(ctx) {
+            ctx.take('battery', 1);
+            return trainOpened(ctx, '동생이 라디오 안테나를 창틀에 묶자 철도 무선이 또렷하게 들렸다. (건전지 -1)');
+          },
+        },
+        {
+          id: 'dad',
+          who: 'dad',
+          label: '아빠가 역까지 가서 알아본다',
+          check: needCapable('dad'),
+          resolve(ctx) {
+            const dad = ctx.person('dad');
+            const hurt = ctx.danger(0.3);
+            if (hurt) ctx.injure(dad);
+            return trainOpened(ctx, `해 질 녘 돌아온 아빠가 역 앞 게시판에서 베껴 온 쪽지를 내밀었다.${hurt ? ' 손등이 찢겨 피가 배어 있다.' : ''}`);
+          },
+        },
+        {
+          id: 'ignore',
+          label: '헛것을 들었을 거라 생각한다',
+          note: (game, params, chain) => (chain.retries < OPENER_RETRIES.train ? '기적 소리는 또 들릴 것이다' : '마지막 기적 소리일지도 모른다'),
+          resolve(ctx) {
+            if (ctx.chain.state.retries < OPENER_RETRIES.train) {
+              ctx.chain.retry([10, 18]);
+              return '기적 소리는 바람에 묻혔다.';
+            }
+            ctx.chain.fail('기적 소리가 더는 들리지 않는다.');
+            return '그 뒤로 기적 소리는 다시 들리지 않았다.';
+          },
+        },
+      ],
+    },
+    {
+      id: 'train_register',
+      title: '승차 등록',
+      text: () => '역 앞 천막까지는 큰길을 두 번 건너야 한다. 누군가 식구들 이름을 올리러 다녀와야 한다.',
+      options: [
+        {
+          id: 'dad',
+          who: 'dad',
+          label: '아빠가 다녀온다',
+          check: needCapable('dad'),
+          resolve(ctx) {
+            const dad = ctx.person('dad');
+            const hurt = ctx.danger(0.2);
+            if (hurt) ctx.injure(dad);
+            return registered(ctx, `아빠가 천막 앞 긴 줄에 한나절을 서 있었다.${hurt ? ' 돌아오는 길에 좀비와 맞닥뜨려 다리를 다쳤다.' : ''}`);
+          },
+        },
+        {
+          id: 'me',
+          label: '내가 다녀온다',
+          resolve(ctx) {
+            const hurt = ctx.danger(0.35);
+            if (hurt) ctx.injure(ctx.game.me);
+            return registered(ctx, `천막에는 사람들이 길게 줄을 서 있었다.${hurt ? ' 돌아오는 길에 넘어져 팔을 크게 긁혔다.' : ''}`);
+          },
+        },
+        {
+          id: 'later',
+          label: '오늘은 나설 수 없다',
+          note: '며칠 뒤 다시 생각한다',
+          resolve(ctx) {
+            const day = ctx.chain.retry([3, 6]);
+            return `오늘은 무리다. ${day}일차에 다시 가 보기로 했다.`;
+          },
+        },
+      ],
+    },
+    {
+      id: 'train_board',
+      title: '피난 열차',
+      text: () =>
+        '중앙역 승강장. 방호복을 입은 검역관이 한 사람씩 몸을 살핀다. "상처가 있는 분은 태울 수 없습니다. 감염됐을지도 모르니까요."',
+      options: [
+        {
+          id: 'board',
+          label: '모두 검역을 받고 열차에 오른다',
+          check: (game) => {
+            const hurt = injuredPeople(game);
+            return hurt.length ? `상처가 있는 사람이 있다 (${hurt.map((p) => p.name).join(', ')})` : null;
+          },
+          resolve(ctx) {
+            ctx.chain.complete();
+            ctx.win('train');
+            return '검역관이 차례로 고개를 끄덕였다. 객차 문이 닫혔다.';
+          },
+        },
+        {
+          id: 'board_leave',
+          label: '다친 식구를 두고 열차에 오른다',
+          check: (game) => {
+            if (game.me.health > 0) return '나도 다쳐서 검역을 통과할 수 없다';
+            return injuredPeople(game).length ? null : '두고 갈 사람이 없다';
+          },
+          resolve(ctx) {
+            const left = injuredPeople(ctx.game);
+            for (const p of left) {
+              p.status = 'lost';
+              p.fate = '상처 때문에 검역을 통과하지 못해 승강장에 남겨졌다.';
+            }
+            ctx.chain.complete();
+            ctx.win('train', { leftBehind: left.map((p) => p.name), leftPlace: '승강장에' });
+            return `${left.map((p) => p.name).join(', ')}의 손을 놓았다. 열차 문이 닫혔다.`;
+          },
+        },
+        {
+          id: 'wait',
+          label: '상처가 나을 때까지 다음 열차를 기다린다',
+          note: '열차는 며칠마다 온다',
+          resolve(ctx) {
+            const day = ctx.chain.retry([5, 9]);
+            return `승강장을 떠났다. 다음 열차는 ${day}일차 새벽이다.`;
+          },
+        },
+      ],
+    },
+  ],
+  describe(chain, game) {
+    const hurt = injuredPeople(game);
+    const steps = [
+      { text: '철도 방송 듣기 (무전기·동생·아빠)', done: chain.stage >= 1 },
+      { text: '역 앞 천막에서 승차 등록', done: chain.stage >= 2 },
+      { text: '검역을 통과해 열차 타기', done: chain.status === 'done' },
+    ];
+    const requirements = [
+      { text: '상처가 있는 사람 없음', ok: hurt.length === 0, detail: hurt.length ? `상처: ${hurt.map((p) => p.name).join(', ')}` : null },
+    ];
+    const schedule = chain.stage >= 1 ? `${chain.stage === 1 ? '승차 등록' : '열차 출발'}: ${when(chain)}` : null;
+    const next = chain.stage === 1 ? `${when(chain)}에 역에 다녀온다.` : `${when(chain)} 새벽 열차. 그 전에 상처를 모두 치료해 두자.`;
+    return { steps, requirements, next, schedule };
+  },
+};
+
+export const CHAINS = [RESCUE, GROUP, CAR, SAFEZONE, CARAVAN, TRAIN];
 
 export function openerRetriesLeft(chain) {
   return OPENER_RETRIES[chain.id] - chain.retries;

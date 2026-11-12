@@ -149,11 +149,11 @@ test('결말 화면: 후일담과 결말 도감(본 결말만 제목이 보인�
   assert.match(html, /그 뒤의 이야기/);
   assert.match(html, /data-person="dad"><b>아빠<\/b> 하얀 옷을 입은 뒤로/);
   assert.match(html, /data-person="mom"><b>엄마<\/b> 60초 안에 데려오지 못했다/);
-  assert.match(html, /결말 도감 <span class="count">2 \/ 12<\/span>/);
-  assert.equal((html.match(/codex-cell unseen/g) ?? []).length, 10);
+  assert.match(html, /결말 도감 <span class="count">2 \/ 16<\/span>/);
+  assert.equal((html.match(/codex-cell unseen/g) ?? []).length, 14);
   assert.doesNotMatch(renderEnding(game, { discovered: ['cult'] }), /새로운 결말/);
 
   const title = renderTitle({ seed: 1, discovered: [] });
-  assert.match(title, /결말 도감 <span class="count">0 \/ 12<\/span>/);
+  assert.match(title, /결말 도감 <span class="count">0 \/ 16<\/span>/);
   assert.doesNotMatch(title, /하얀 정원|남쪽 안전지대/, '보지 못한 결말의 이름은 나오지 않는다');
 });

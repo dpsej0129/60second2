@@ -1,6 +1,6 @@
 // 게임 전체를 대신 플레이하는 전략(검증 도구). 목표 승리 경로(target)를 정하면
 // 그 경로의 사건은 수락하고 나머지 경로는 거절하며, 필요한 물자를 탐사로 구해 온다.
-//   target: 'rescue' | 'group' | 'car' | 'safezone' | 'caravan' | 'all'(모든 경로 수락) | 'none'(모든 경로 거절)
+//   target: 'rescue' | 'group' | 'car' | 'safezone' | 'caravan' | 'train' | 'all'(모든 경로 수락) | 'none'(모든 경로 거절)
 import { HUNGER_NOTICE, SIM_STEP, THIRST_NOTICE } from '../../src/core/constants.js';
 import { quizAnswerId } from '../../src/core/events/missions.js';
 import { SERVINGS } from '../../src/core/items.js';
@@ -22,6 +22,9 @@ const CHAIN_PREFS = {
   caravan_meet: { go: ['trade'], stop: ['ignore'] },
   caravan_job: { go: ['sis', 'toolkit', 'fuel'], stop: ['none'] },
   caravan_leave: { go: ['go'], stop: ['wait'] },
+  train_whistle: { go: ['radio', 'sis', 'dad'], stop: ['ignore'] },
+  train_register: { go: ['dad', 'me'], stop: ['later'] },
+  train_board: { go: ['board'], stop: ['wait'] },
 };
 
 // 미션 단계(항상 진행하는 쪽으로)
@@ -70,6 +73,10 @@ const RANDOM_PREFS = {
   white_robes: ['refuse'],
   gang_note: ['ambush', 'pay', 'ignore'],
   gang_raid: ['fight', 'bat', 'give'],
+  dj_station: ['listen'],
+  fire: ['water', 'dad', 'me'],
+  horde_warning: ['toolkit', 'dad', 'pray'],
+  horde: ['dad', 'hold'],
 };
 
 const wants = (target, chainId) => target === 'all' || target === chainId;
@@ -120,6 +127,7 @@ export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
   if (target === 'group') first = ['medkit', 'water', 'canned'];
   if (target === 'safezone') first = ['roadmap', 'water', 'canned', 'canned'];
   if (target === 'caravan') first = ['toolkit', 'battery', 'battery'];
+  if (target === 'train') first = ['medkit', 'radio', 'battery'];
   const legs = [first];
   if (bring.includes('dad')) legs.push(['dad']);
   const pair = ['mom', 'sis'].filter((id) => bring.includes(id));

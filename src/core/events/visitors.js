@@ -26,6 +26,36 @@ function drivenOff(ctx) {
 
 export const VISITOR_EVENTS = [
   {
+    id: 'dj_station',
+    title: '좀비 FM 마지막 방송',
+    weight: 3,
+    minDay: 25,
+    maxCount: 1,
+    // 좀비 FM의 비밀 창고를 찾아낸 뒤, 라디오를 들을 수단이 있을 때
+    when: (game) => game.director.chains.dj?.status === 'done' && (game.stock.radio > 0 || isCapable(game.person('sis'))),
+    text: () =>
+      '좀비 FM에서 DJ의 목소리가 떨린다. "청취자 여러분, 저는 내일 이 도시를 떠납니다. 방송국 열쇠는 그 비밀 창고 우편함에 두고 갈게요. 누군가 이 방송을 이어 주면 좋겠어요. 노래가 끊기면 안 되잖아요."',
+    options: [
+      {
+        id: 'take',
+        label: '식구들과 방송국으로 가서 마이크를 잡는다',
+        note: '이 집을 떠난다',
+        resolve(ctx) {
+          ctx.end('radio');
+          return '비밀 창고 우편함에서 녹슨 열쇠를 찾았다. 방송국 계단을 오르는데 심장이 쿵쾅거렸다.';
+        },
+      },
+      {
+        id: 'listen',
+        label: '마지막 방송을 끝까지 듣는다',
+        resolve(ctx) {
+          for (const p of ctx.family()) ctx.mood(p, -1);
+          return 'DJ는 마지막 곡으로 오래된 자장가를 틀었다. 노래가 끝나자 주파수에는 잡음만 남았다.';
+        },
+      },
+    ],
+  },
+  {
     id: 'white_robes',
     title: '하얀 옷의 사람들',
     weight: 1.3,

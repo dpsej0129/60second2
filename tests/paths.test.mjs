@@ -8,7 +8,7 @@ import { chooseOption, playGame, talkTarget, treat } from './helpers/strategy.mj
 
 const option = (view, id) => view.options.find((o) => o.id === id);
 
-for (const target of ['rescue', 'group', 'car', 'safezone', 'caravan']) {
+for (const target of ['rescue', 'group', 'car', 'safezone', 'caravan', 'train']) {
   test(`승리 경로 「${target}」: 60초 탐색 → 사건 → 반복 탐사 → 결말까지 실제로 도달한다`, () => {
     // 탐사에서 가족을 잃는 등 운이 나쁘면 질 수도 있다. 그래도 대부분은 그 경로로 이긴다.
     let wins = 0;
@@ -59,7 +59,7 @@ test('탈출 경로가 모두 닫히면 며칠 뒤 하나가 다시 열려, 이�
     game.endDay();
     if (closedOn != null && paths.some((c) => c.status !== 'failed')) reopenedOn = game.day;
   }
-  assert.ok(closedOn != null, '모두 거절하면 다섯 경로가 다 닫힌다');
+  assert.ok(closedOn != null, '모두 거절하면 모든 경로가 닫힌다');
   assert.ok(reopenedOn != null, '그 뒤 경로 하나가 다시 열린다');
   assert.ok(reopenedOn - closedOn >= 8 && reopenedOn - closedOn <= 16, `${closedOn}일차에 닫히고 ${reopenedOn}일차에 다시 열림`);
   const revived = paths.find((c) => c.status !== 'failed');

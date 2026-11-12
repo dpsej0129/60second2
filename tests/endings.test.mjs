@@ -7,11 +7,12 @@ import { homeGame, jumpToStage, resolveAnyEvent, stageEvent } from './helpers/se
 
 const option = (view, id) => view.options.find((o) => o.id === id);
 
-test('결말은 탈출 5가지, 기묘한 결말 1가지, 패배 6가지다', () => {
+test('결말은 탈출 6가지, 기묘한 결말 2가지, 패배 8가지다', () => {
   const byType = (type) => ENDING_ORDER.filter((id) => ENDINGS[id].type === type);
-  assert.deepEqual(byType('victory'), ['rescue', 'group', 'car', 'safezone', 'caravan']);
-  assert.deepEqual(byType('odd'), ['cult']);
-  assert.deepEqual(byType('defeat').sort(), ['caught', 'died', 'lost', 'madness', 'raiders', 'timeout']);
+  assert.deepEqual(byType('victory'), ['rescue', 'group', 'car', 'safezone', 'caravan', 'train']);
+  assert.deepEqual(byType('odd'), ['cult', 'radio']);
+  assert.deepEqual(byType('defeat').sort(), ['caught', 'died', 'fire', 'horde', 'lost', 'madness', 'raiders', 'timeout']);
+  assert.equal(new Set(ENDING_ORDER.map((id) => ENDINGS[id].icon)).size, ENDING_ORDER.length, '결말마다 아이콘이 다르다');
   for (const id of ENDING_ORDER) assert.ok(ENDINGS[id].icon && ENDINGS[id].title && ENDINGS[id].text, id);
 });
 
@@ -203,4 +204,103 @@ test('후일담: 먼저 떠나보낸 식구는 사연과 함께 남는다', () =
       ['동생', '굶주림으로 세상을 떠났다.'],
     ],
   );
+});
+
+test('마지막 피난 열차: 검역에서 상처가 있는 사람은 탈 수 없다. 치료하거나, 두고 가거나, 다음 열차를 기다린다', () => {
+  const game = homeGame({ seed: 61, stock: { food: 99, water: 99, med: 3 } });
+  let view = jumpToStage(game, 'train', 0);
+  assert.equal(option(view, 'radio').disabled, true, '무전기가 없다');
+  assert.equal(option(view, 'dad').disabled, false);
+  game.chooseOption('dad');
+  assert.equal(game.director.chains.train.stage, 1);
+
+  view = jumpToStage(game, 'train', 2);
+  const sis = game.person('sis');
+  sis.health = 1;
+  game.me.health = 0;
+  game.person('dad').health = 0;
+  assert.match(option(game.eventView(), 'board').reason, /상처가 있는 사람이 있다 \(동생\)/);
+  assert.equal(option(game.eventView(), 'board_leave').disabled, false);
+  game.chooseOption('wait');
+  assert.equal(game.director.chains.train.status, 'scheduled', '다음 열차가 온다');
+
+  jumpToStage(game, 'train', 2);
+  for (const p of game.presentPeople()) p.health = 0;
+  game.chooseOption('board');
+  assert.equal(game.ending.id, 'train');
+  assert.equal(game.ending.type, 'victory');
+  assert.match(epilogue(game).find((l) => l.id === 'mom').text, /객차를 돌며/);
+
+  // 다친 식구를 두고 떠나면 승강장에 남는다
+  const g2 = homeGame({ seed: 62, bring: ['dad', 'sis'], stock: { food: 99, water: 99 } });
+  jumpToStage(g2, 'train', 2);
+  for (const p of g2.presentPeople()) p.health = 0;
+  g2.person('sis').health = 1;
+  g2.chooseOption('board_leave');
+  assert.equal(g2.ending.id, 'train');
+  assert.match(g2.ending.text, /승강장에 남겨진 동생/);
+  assert.match(epilogue(g2).find((l) => l.id === 'sis').text, /검역을 통과하지 못해/);
+});
+
+test('좀비 FM의 새 목소리: 비밀 창고를 찾아낸 뒤 DJ의 마지막 방송이 오면 방송국을 이어받을 수 있다', () => {
+  const game = homeGame({ seed: 63, stock: { food: 40, water: 40, radio: 1 } });
+  const station = game.director.randomEvents.find((e) => e.id === 'dj_station');
+  assert.equal(station.when(game), false, 'DJ 미션을 끝내기 전에는 오지 않는다');
+  game.director.chains.dj.status = 'done';
+  assert.equal(station.when(game), true);
+  stageEvent(game, 'dj_station');
+  game.chooseOption('take');
+  assert.equal(game.ending.id, 'radio');
+  assert.equal(game.ending.type, 'odd');
+  assert.match(epilogue(game).find((l) => l.id === 'sis').text, /송신기/);
+});
+
+test('불길: 물 2병이나 아빠로 끌 수 있고, 맨손이면 집을 잃을 수도 있다', () => {
+  const game = homeGame({ seed: 64, stock: { food: 40, water: 40 } });
+  let view = stageEvent(game, 'fire');
+  game.chooseOption('water');
+  assert.equal(game.stock.water, 40 - 2 * SERVINGS);
+  assert.equal(game.ending, null);
+
+  const flee = homeGame({ seed: 65 });
+  stageEvent(flee, 'fire');
+  flee.chooseOption('flee');
+  assert.equal(flee.ending.id, 'fire');
+
+  let burned = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const g = homeGame({ seed, bring: [], stock: { water: 0 } });
+    view = stageEvent(g, 'fire');
+    assert.equal(option(view, 'water').disabled, true);
+    g.chooseOption('me');
+    if (g.ending?.id === 'fire') burned += 1;
+  }
+  assert.ok(burned >= 3 && burned <= 18, `맨손으로 40번 중 ${burned}번 집을 잃음`);
+});
+
+test('좀비 떼: 미리 문을 막아 두면 무사히 지나가고, 아무것도 안 하면 문이 무너질 수 있다', () => {
+  const game = homeGame({ seed: 66, stock: { food: 40, water: 40, toolkit: 1 } });
+  stageEvent(game, 'horde_warning');
+  game.chooseOption('toolkit');
+  assert.equal(game.flags.barricade, true);
+  assert.ok(game.flags.hordeDay >= game.day + 2 && game.flags.hordeDay <= game.day + 4);
+  const horde = game.director.randomEvents.find((e) => e.id === 'horde');
+  assert.equal(horde.when(game), false, '그날이 오기 전에는 오지 않는다');
+  game.day = game.flags.hordeDay;
+  assert.equal(horde.when(game), true);
+  stageEvent(game, 'horde');
+  game.chooseOption('hold');
+  assert.equal(game.ending, null, '판자가 버텼다');
+  assert.equal(game.flags.hordeDay, null);
+
+  let broken = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const g = homeGame({ seed, bring: [], stock: { food: 20 } });
+    stageEvent(g, 'horde_warning');
+    g.chooseOption('pray');
+    stageEvent(g, 'horde');
+    g.chooseOption('hold');
+    if (g.ending?.id === 'horde') broken += 1;
+  }
+  assert.ok(broken >= 4 && broken <= 22, `막지 않고 40번 중 ${broken}번 문이 무너짐`);
 });

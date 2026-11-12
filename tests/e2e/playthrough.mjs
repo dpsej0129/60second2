@@ -294,13 +294,14 @@ async function main() {
   const results = [];
 
   try {
-    // 1) 좀비 없이 다섯 경로를 끝까지 (흐름·조건 검증). 탐사에서 가족을 잃어 질 수도 있어 경로마다 시드 2개까지.
+    // 1) 좀비 없이 여섯 경로를 끝까지 (흐름·조건 검증). 탐사에서 가족을 잃어 질 수도 있어 경로마다 시드 2개까지.
     for (const [target, seeds] of [
       ['rescue', [101, 102]],
       ['group', [202, 203]],
       ['car', [303, 304]],
       ['safezone', [404, 405]],
       ['caravan', [505, 506]],
+      ['train', [606, 607]],
     ]) {
       let won = false;
       for (const seed of seeds) {
@@ -367,7 +368,7 @@ async function main() {
     const seen = new Set([...results.map((r) => r.ending), 'timeout']);
     const codex = await page.$$eval('[data-ref="codex"] .codex-cell.seen', (els) => els.map((el) => el.dataset.ending));
     assert.deepEqual(new Set(codex), seen, '본 결말이 도감에 남는다');
-    log(`[결말 도감] ${codex.length}/12: ${codex.join(', ')}`);
+    log(`[결말 도감] ${codex.length}/16: ${codex.join(', ')}`);
     await page.screenshot({ path: join(OUT, 'title-codex.png'), fullPage: true });
 
     assert.deepEqual(errors, [], '브라우저 콘솔 오류 없음');
