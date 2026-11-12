@@ -956,6 +956,11 @@ kbd {
   margin: 0;
 }
 
+.event-card .omen {
+  color: #6b1a7a;
+  font-weight: 700;
+}
+
 .event-card h3 {
   font-size: 22px;
 }

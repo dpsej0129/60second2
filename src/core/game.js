@@ -17,6 +17,7 @@ import { ENDINGS } from './endings.js';
 import { CHAINS, EVENT_DEFS, MISSIONS, PATHS, RANDOM_EVENTS } from './events/index.js';
 import { chainMissedNote } from './events/chains.js';
 import { EventDirector } from './events/director.js';
+import { rollNightEvent } from './events/night.js';
 import { expeditionRisk, rollItems, rollLoot } from './expedition.js';
 import { Inventory, isPerson } from './inventory.js';
 import { itemSummary, mealLines, morningStatus, nameList } from './journal.js';
@@ -51,6 +52,8 @@ export class Game {
     // 미션 등으로 생기는 지속 상태. dog: 떠돌이 개 보리와 함께 지냄, shortcut: 탐사 지름길을 앎
     // gangAnger: 약탈자 쪽지를 무시한 횟수, robes: 하얀 옷의 사람들이 찾아온 횟수
     // hordeDay: 좀비 떼가 지나갈 날, barricade: 그 전에 문과 창을 막았는지
+    this.nightHistory = {}; // 밤사이 사건이 마지막으로 일어난 날
+    this.nightEvents = true; // 밤사이 사건을 굴릴지(규칙을 떼어 검사할 때만 끈다)
     this.tripStreak = 0; // 쉬지 않고 이어 보낸 탐사 수
     this.restDays = 0; // 아무도 탐사를 나가 있지 않은 밤의 수(하룻밤마다 연속 탐사 피로가 하나 풀린다)
     this.flags = {
@@ -587,6 +590,7 @@ export class Game {
       stage: this.event.stage ?? null,
       text: evaluate(def.text, this, params, chain),
       hint: def.hint ?? null,
+      apocalypse: !!def.apocalypse,
       resolved: this.event.resolved,
       outcome: this.event.outcome,
       choice: this.event.choice,
@@ -759,6 +763,9 @@ export class Game {
     }
 
     if (!this.expedition) this.restDays += 1;
+    // 밤사이 저절로 일어나는 일(쥐, 빗물, 잠 못 든 밤…)
+    const night = this.nightEvents ? rollNightEvent(this, this.rng.outcome) : null;
+    if (night) report.push({ text: night.text, tone: night.tone });
     const lostMind = this.updateMoods(present, report);
     this.checkDeaths(report);
     if (lostMind && !this.ending) this.setEnding('madness');

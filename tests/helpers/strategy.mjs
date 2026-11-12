@@ -77,6 +77,10 @@ const RANDOM_PREFS = {
   fire: ['water', 'dad', 'me'],
   horde_warning: ['toolkit', 'dad', 'pray'],
   horde: ['dad', 'hold'],
+  mutant: ['flare', 'dad', 'hide'],
+  acid_rain: ['toolkit', 'endure'],
+  bombing: ['cellar', 'leave'],
+  turned_neighbor: ['toolkit', 'dad', 'endure'],
 };
 
 const wants = (target, chainId) => target === 'all' || target === chainId;

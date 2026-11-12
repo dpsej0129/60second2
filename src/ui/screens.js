@@ -144,7 +144,7 @@ function eventSection(game) {
     <section class="today-part">
       ${earlier}
       <div class="event-card ${view.resolved ? 'resolved' : 'pending'}" data-ref="event" data-event="${view.id}">
-        <p class="kicker">${earlier ? '이어서 일어난 일' : '오늘의 일'}</p>
+        <p class="kicker">${earlier ? '이어서 일어난 일' : '오늘의 일'}${view.apocalypse ? ' · <span class="omen">☢ 종말의 징조</span>' : ''}</p>
         <h3>${esc(view.title)}</h3>
         <p class="event-text">${esc(view.text)}</p>
         ${when(view.hint && !view.resolved, `<p class="event-hint">${esc(view.hint)}</p>`)}

@@ -34,11 +34,13 @@ export function enterHome(game) {
 /**
  * bring 에 있는 가족을 실제로 데려와 집 생존 1일차로 넘어간 게임.
  * bonus: false(기본)면 '덤으로 일어나는 미션 사건'을 꺼서 하루에 사건이 하나만 일어난다
+ * night: false(기본)면 밤사이 사건(쥐·빗물 등)을 꺼서 재고 변화를 정확히 셀 수 있게 한다
  * (특정 사건의 조건을 따로 떼어 검사하기 위한 것. 덤 사건 자체는 events/missions 테스트에서 확인한다).
  */
-export function homeGame({ seed = 1, bring = ['dad', 'mom', 'sis'], stock = {}, zombies = false, difficulty = 'hard', bonus = false } = {}) {
+export function homeGame({ seed = 1, bring = ['dad', 'mom', 'sis'], stock = {}, zombies = false, difficulty = 'hard', bonus = false, night = false } = {}) {
   const game = new Game({ seed, zombies, difficulty });
   if (!bonus) game.director.pickBonus = () => null;
+  game.nightEvents = night; // 밤사이 사건은 night.test 에서 따로 검사한다
   game.startFirstRun();
   for (const id of bring) {
     const spot = game.run.ground.find((g) => g.id === id);
