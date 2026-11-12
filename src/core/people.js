@@ -83,7 +83,8 @@ export function createPerson(def, status) {
     health: def.initialHealth ?? 0,
     untreated: 0,
     treatedToday: false,
-    mood: 0, // 마음 상태(가족만)
+    mood: 0, // 마음 상태(주인공은 혼자 남았을 때만 흔들린다)
+    fate: null, // 집을 떠나거나 숨졌을 때의 사연(결말 후일담)
     talkedToday: false,
     cause: null,
   };

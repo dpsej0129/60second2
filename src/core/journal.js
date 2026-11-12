@@ -51,6 +51,14 @@ function conditions(p) {
   if (p.hunger >= HUNGER_WEAK) parts.push(['굶주려 기운이 없고', '굶주려 기운이 없다', 'bad']);
   else if (p.hunger >= HUNGER_NOTICE) parts.push(['배가 고프고', '배가 고프다', 'warn']);
   const mood = p.mood ?? 0;
+  if (p.isPlayer) {
+    // 주인공의 마음은 혼자 남았을 때만 흔들린다
+    if (mood >= MOOD_BROKEN) parts.push(['벽에 그린 가족과 이야기를 나누고', '벽에 그린 가족과 이야기를 나눈다', 'bad']);
+    else if (mood >= MOOD_DEPRESSED) parts.push(['하루 종일 벽만 보고 있고', '하루 종일 벽만 보고 있다', 'bad']);
+    else if (mood >= MOOD_LOW) parts.push(['밤마다 잠을 설치고', '밤마다 잠을 설친다', 'warn']);
+    else if (mood === 1) parts.push(['혼잣말이 늘었고', '혼잣말이 늘었다', '']);
+    return parts;
+  }
   if (mood >= MOOD_BROKEN) parts.push(['아무도 없는 쪽을 보며 중얼거리고', '아무도 없는 쪽을 보며 중얼거린다', 'bad']);
   else if (mood >= MOOD_DEPRESSED) parts.push(['구석에 웅크린 채 아무것도 하려 하지 않고', '구석에 웅크린 채 아무것도 하려 하지 않는다', 'bad']);
   else if (mood >= MOOD_LOW) parts.push(['말수가 부쩍 줄었고', '말수가 부쩍 줄었다', 'warn']);

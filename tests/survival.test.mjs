@@ -95,6 +95,7 @@ test('재고보다 많이 배급할 수는 없다', () => {
 
 test('물이 없으면 며칠 뒤 숨지고, 주인공이 숨지면 패배한다', () => {
   const game = homeGame({ bring: [], stock: { food: 50, water: 0 } });
+  game.director.pick = () => null; // 물을 주는 사건이 끼어들지 않게
   passDays(game, 20);
   assert.equal(game.phase, 'ending');
   assert.equal(game.ending.type, 'defeat');

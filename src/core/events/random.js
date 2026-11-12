@@ -355,6 +355,7 @@ export const RANDOM_EVENTS = [
         resolve(ctx) {
           const p = ctx.person(ctx.params.member);
           p.status = 'lost';
+          p.fate = '살아서 찾아왔지만, 문을 열어 주지 않았다.';
           return `${p.name}의 발소리가 멀어졌다. 다시는 볼 수 없을 것이다.`;
         },
       },

@@ -8,7 +8,7 @@ const CAN = SERVINGS;
 const tribute = (d) => `${formatAmount('food', d.food)}, ${formatAmount('water', d.water)}`;
 import { allOf, canTransmit, criticalPeople, needCapable, needStock } from './helpers.js';
 
-const OPENER_RETRIES = { rescue: 2, group: 1, car: 1 };
+const OPENER_RETRIES = { rescue: 2, group: 1, car: 1, safezone: 1, caravan: 1 };
 
 const when = (chain) => (chain.status === 'active' ? '오늘' : `${chain.due}일차`);
 
@@ -138,7 +138,10 @@ const RESCUE = {
           resolve(ctx) {
             ctx.take('flare', 1);
             const left = criticalPeople(ctx.game);
-            for (const p of left) p.status = 'lost';
+            for (const p of left) {
+              p.status = 'lost';
+              p.fate = '걷지 못해 옥상에 남겨졌다.';
+            }
             ctx.chain.complete();
             ctx.win('rescue', { leftBehind: left.map((p) => p.name) });
             return `신호탄을 쏘아 올렸다. ${left.map((p) => p.name).join(', ')}의 손을 놓고 줄사다리를 올랐다.`;
@@ -510,7 +513,322 @@ const CAR = {
   },
 };
 
-export const CHAINS = [RESCUE, GROUP, CAR];
+// ── 남쪽 안전지대(걸어서 피난) ─────────────────────
+
+/** 걸어서 떠나는 데 필요한 몫: 한 사람마다 통조림 1캔·물 1병 */
+export function walkSupplies(game) {
+  const n = game.presentPeople().length;
+  return { food: n * CAN, water: n * CAN };
+}
+
+function scouted(ctx, lead) {
+  const day = ctx.chain.advance([8, 14]);
+  ctx.chain.data.departDay = day;
+  return `${lead} ${day}일차 새벽에 떠나기로 했다. 걸어서 사흘, 한 사람마다 통조림 1캔과 물 1병은 챙겨야 한다. 걷지 못하는 사람은 데려갈 수 없다.`;
+}
+
+const SAFEZONE = {
+  id: 'safezone',
+  icon: '🚶',
+  title: '남쪽 안전지대',
+  openWindow: [28, 50],
+  initData: () => ({ departDay: null, route: null }),
+  stages: [
+    {
+      id: 'walk_rumor',
+      title: '피난민 행렬',
+      text: (game, params, chain) =>
+        chain.retries
+          ? '또 한 무리의 피난민이 짐을 지고 남쪽으로 걸어간다. 이번에도 맨 뒤의 노인이 우리 집 담벼락에 기대어 숨을 고른다.'
+          : '창밖 길로 짐을 진 사람들이 줄지어 지나간다. 맨 뒤에 처진 노인이 우리 집 담벼락에 기대어 숨을 고른다.',
+      options: [
+        {
+          id: 'ask',
+          label: '물 한 모금을 건네고 어디로 가는지 묻는다',
+          cost: '물 ¼병',
+          check: needStock('water', 1),
+          resolve(ctx) {
+            ctx.take('water', 1);
+            ctx.chain.open();
+            const day = ctx.chain.advance([8, 14]);
+            return `노인은 물을 단숨에 마셨다. "남쪽 저수지 너머에 군이 지키는 안전지대가 있다더군. 걸어서 사흘이야. 길을 먼저 알아 두게." ${day}일차쯤 길을 살펴보기로 했다. (물 -¼병)`;
+          },
+        },
+        {
+          id: 'listen',
+          label: '창 너머로 이야기만 엿듣는다',
+          resolve(ctx) {
+            ctx.chain.open();
+            const day = ctx.chain.advance([10, 16]);
+            return `"남쪽… 저수지… 안전지대…" 띄엄띄엄 들린 말을 공책에 적어 두었다. ${day}일차쯤 길을 살펴보기로 했다.`;
+          },
+        },
+        {
+          id: 'ignore',
+          label: '커튼을 닫는다',
+          note: (game, params, chain) =>
+            chain.retries < OPENER_RETRIES.safezone ? '피난민은 또 지나갈 것이다' : '이번이 마지막 행렬일지도 모른다',
+          resolve(ctx) {
+            if (ctx.chain.state.retries < OPENER_RETRIES.safezone) {
+              ctx.chain.retry([10, 18]);
+              return '발소리가 남쪽으로 멀어졌다.';
+            }
+            ctx.chain.fail('피난민 행렬이 더는 지나가지 않는다.');
+            return '그 뒤로 길은 텅 비었다. 피난민은 다시 보이지 않았다.';
+          },
+        },
+      ],
+    },
+    {
+      id: 'walk_scout',
+      title: '남쪽 길',
+      text: () => '남쪽으로 가는 길을 누군가 먼저 살펴봐야 한다. 무너진 고가도로, 좀비가 모여 있는 사거리, 끊긴 다리…',
+      options: [
+        {
+          id: 'map',
+          label: '도로 지도로 우회로를 짠다',
+          check: needStock('map'),
+          resolve(ctx) {
+            ctx.chain.data.route = 'map';
+            return scouted(ctx, '도로 지도 위에 연필로 길을 그었다. 큰길을 피해 저수지까지 가는 뒷길이 있다.');
+          },
+        },
+        {
+          id: 'dad',
+          who: 'dad',
+          label: '아빠가 밤에 몰래 길을 살피고 온다',
+          check: needCapable('dad'),
+          resolve(ctx) {
+            ctx.chain.data.route = 'dad';
+            const dad = ctx.person('dad');
+            const hurt = ctx.danger(0.25);
+            if (hurt) ctx.injure(dad);
+            return scouted(ctx, `새벽녘 돌아온 아빠가 숨을 몰아쉬었다. "길은 있어."${hurt ? ' 팔에 긁힌 상처가 길게 나 있다.' : ''}`);
+          },
+        },
+        {
+          id: 'me',
+          label: '내가 직접 다녀온다',
+          resolve(ctx) {
+            ctx.chain.data.route = 'me';
+            const hurt = ctx.danger(0.4);
+            if (hurt) ctx.injure(ctx.game.me);
+            return scouted(ctx, `밤새 골목을 기어 다녔다. 저수지 둑이 보이는 곳까지 갔다 왔다.${hurt ? ' 돌아오는 길에 넘어져 다리를 다쳤다.' : ''}`);
+          },
+        },
+        {
+          id: 'later',
+          label: '지금은 나설 수 없다',
+          note: '며칠 뒤 다시 생각한다',
+          resolve(ctx) {
+            const day = ctx.chain.retry([3, 6]);
+            return `오늘은 무리다. ${day}일차에 다시 생각해 보기로 했다.`;
+          },
+        },
+      ],
+    },
+    {
+      id: 'walk_depart',
+      title: '떠나는 새벽',
+      text: (game) => {
+        const need = walkSupplies(game);
+        return `떠나기로 한 새벽이다. 배낭에 ${tribute(need)}을 나눠 담아야 한다. 걷지 못하는 사람이 있으면 데려갈 수 없다.`;
+      },
+      options: [
+        {
+          id: 'go',
+          label: '배낭을 메고 남쪽으로 걷는다',
+          cost: '한 사람마다 통조림 1캔·물 1병',
+          check: (game) => {
+            const need = walkSupplies(game);
+            const critical = criticalPeople(game);
+            if (critical.length || game.me.health >= 2) {
+              return `걷지 못하는 사람이 있다 (${[...(game.me.health >= 2 ? ['나'] : []), ...critical.map((p) => p.name)].join(', ')})`;
+            }
+            return needStock('food', need.food)(game) ?? needStock('water', need.water)(game);
+          },
+          resolve(ctx) {
+            const need = walkSupplies(ctx.game);
+            ctx.take('food', need.food);
+            ctx.take('water', need.water);
+            ctx.chain.complete();
+            ctx.win('safezone');
+            return '문을 걸어 잠그고 열쇠를 우편함에 넣었다. 다시 돌아올 일은 없을 것이다. 남쪽으로 걸었다.';
+          },
+        },
+        {
+          id: 'wait',
+          label: '아직 떠날 수 없다',
+          note: '며칠 뒤 다시 새벽을 기다린다',
+          resolve(ctx) {
+            const day = ctx.chain.retry([5, 9]);
+            ctx.chain.data.departDay = day;
+            return `배낭을 다시 풀었다. ${day}일차 새벽에 다시 떠나 보기로 했다.`;
+          },
+        },
+      ],
+    },
+  ],
+  describe(chain, game) {
+    const need = walkSupplies(game);
+    const critical = criticalPeople(game);
+    const steps = [
+      { text: '피난민에게서 안전지대 이야기를 듣기', done: chain.stage >= 1 },
+      { text: '남쪽 길 살펴보기 (지도·아빠·나)', done: chain.stage >= 2 },
+      { text: '한 사람마다 통조림 1캔·물 1병을 챙겨 떠나기', done: chain.status === 'done' },
+    ];
+    const requirements = [
+      { text: '식량 (떠나는 날 재고)', have: game.stock.food, need: need.food },
+      { text: '물 (떠나는 날 재고)', have: game.stock.water, need: need.water },
+      { text: '걷지 못하는 중상자 없음', ok: critical.length === 0 && game.me.health < 2 },
+    ];
+    const schedule = chain.stage >= 1 ? `${chain.stage === 1 ? '길 살펴보기' : '떠나는 날'}: ${when(chain)}` : null;
+    const next = chain.stage === 1 ? `${when(chain)}에 남쪽 길을 살펴본다.` : `${when(chain)} 새벽에 떠난다. ${tribute(need)}이 필요하다.`;
+    return { steps, requirements, next, schedule };
+  },
+};
+
+// ── 떠돌이 상인 캐러밴 ─────────────────────────────
+
+const CARAVAN_FARE = { battery: 2, water: CAN };
+
+function caravanHired(ctx, lead) {
+  const day = ctx.chain.advance([8, 14]);
+  return `${lead} "좋아, 쓸모 있는 식구들이네. ${day}일차에 다시 들를게. 자리값은 건전지 두 개, 그리고 길에서 마실 물 한 병." 상인이 트럭 문을 두드리며 웃었다.`;
+}
+
+const CARAVAN = {
+  id: 'caravan',
+  icon: '🛻',
+  title: '떠돌이 상인 캐러밴',
+  openWindow: [34, 58],
+  initData: () => ({ misses: 0 }),
+  stages: [
+    {
+      id: 'caravan_meet',
+      title: '상인 트럭',
+      text: (game, params, chain) =>
+        chain.retries
+          ? '그 철판 트럭이 다시 집 앞에 섰다. "또 왔어요! 이번엔 얘기 좀 해 볼래요?"'
+          : '덜컹거리는 소리와 함께 짐칸에 철판을 덧댄 트럭이 집 앞에 섰다. 운전석의 여자가 확성기로 외친다. "물물교환! 쓸 만한 거 있으면 나와 봐요!"',
+      options: [
+        {
+          id: 'trade',
+          label: '문틈으로 이야기를 나눈다',
+          resolve(ctx) {
+            ctx.chain.open();
+            const day = ctx.chain.advance([8, 14]);
+            return `여자는 도시와 도시 사이를 떠도는 상인이었다. "트럭에 자리가 좀 남아. 공짜는 아니고, 쓸모를 보여 주면 생각해 보지." ${day}일차에 다시 들른다고 했다.`;
+          },
+        },
+        {
+          id: 'ignore',
+          label: '숨어서 기척을 죽인다',
+          note: (game, params, chain) => (chain.retries < OPENER_RETRIES.caravan ? '트럭은 또 지나갈 것이다' : '다시는 들르지 않을 것이다'),
+          resolve(ctx) {
+            if (ctx.chain.state.retries < OPENER_RETRIES.caravan) {
+              ctx.chain.retry([10, 18]);
+              return '확성기 소리가 다음 골목으로 멀어졌다.';
+            }
+            ctx.chain.fail('상인 트럭이 더는 이 길로 오지 않는다.');
+            return '트럭은 다시 오지 않았다.';
+          },
+        },
+      ],
+    },
+    {
+      id: 'caravan_job',
+      title: '상인의 부탁',
+      text: () => '상인 트럭이 약속대로 왔다. "발전기가 말썽이야. 고칠 수 있으면 자리를 내주지. 못 고치면 연료라도 좀 나눠 주든가."',
+      options: [
+        {
+          id: 'sis',
+          who: 'sis',
+          label: '동생이 발전기를 고친다',
+          check: needCapable('sis'),
+          resolve: (ctx) => caravanHired(ctx, '동생이 발전기 덮개를 열고 한참 만지작거리더니, 꺼졌던 짐칸 전등이 반짝 들어왔다.'),
+        },
+        {
+          id: 'toolkit',
+          label: '공구 상자를 내준다',
+          check: needStock('toolkit'),
+          resolve(ctx) {
+            ctx.take('toolkit', 1);
+            return caravanHired(ctx, '공구 상자를 건넸다. 상인의 정비공이 반나절 만에 발전기를 살려 냈다. (공구 상자 -1)');
+          },
+        },
+        {
+          id: 'fuel',
+          label: '연료통 하나를 넘긴다',
+          check: needStock('fuel'),
+          resolve(ctx) {
+            ctx.take('fuel', 1);
+            return caravanHired(ctx, '연료통을 굴려 트럭 옆에 세워 두었다. (연료통 -1)');
+          },
+        },
+        {
+          id: 'none',
+          label: '도울 방법이 없다',
+          note: (game, params, chain) => (chain.data.misses < 1 ? '한 번은 더 들를 것이다' : '다시는 오지 않을 것이다'),
+          resolve(ctx) {
+            if (ctx.chain.data.misses < 1) {
+              ctx.chain.data.misses += 1;
+              const day = ctx.chain.retry([6, 10]);
+              return `"아쉽네. ${day}일차쯤 한 번 더 지나갈게."`;
+            }
+            ctx.chain.fail('상인은 다른 길을 찾아 떠났다.');
+            return '상인은 어깨를 으쓱하고 트럭에 올랐다. 그 뒤로 다시 오지 않았다.';
+          },
+        },
+      ],
+    },
+    {
+      id: 'caravan_leave',
+      title: '떠나는 트럭',
+      text: () => '철판 트럭이 시동을 건 채 집 앞에 섰다. "자리 맡아 뒀어요. 건전지 두 개랑 물 한 병, 준비됐죠?"',
+      options: [
+        {
+          id: 'go',
+          label: '자리값을 내고 짐칸에 오른다',
+          cost: '건전지 2 · 물 1병',
+          check: allOf(needStock('battery', CARAVAN_FARE.battery), needStock('water', CARAVAN_FARE.water)),
+          resolve(ctx) {
+            ctx.take('battery', CARAVAN_FARE.battery);
+            ctx.take('water', CARAVAN_FARE.water);
+            ctx.chain.complete();
+            ctx.win('caravan');
+            return '건전지와 물병을 내밀자 상인이 짐칸 문을 열어 주었다. 덜컹, 트럭이 출발했다.';
+          },
+        },
+        {
+          id: 'wait',
+          label: '다음에 가겠다고 한다',
+          note: '다음 바퀴에 다시 들른다',
+          resolve(ctx) {
+            const day = ctx.chain.retry([6, 10]);
+            return `"그럼 다음 바퀴에. ${day}일차쯤 다시 지나갈게."`;
+          },
+        },
+      ],
+    },
+  ],
+  describe(chain, game) {
+    const steps = [
+      { text: '상인과 이야기하기', done: chain.stage >= 1 },
+      { text: '쓸모 보여 주기 (동생·공구 상자·연료통)', done: chain.stage >= 2 },
+      { text: '자리값(건전지 2·물 1병)을 내고 떠나기', done: chain.status === 'done' },
+    ];
+    const requirements = [
+      { text: '건전지', have: game.stock.battery, need: CARAVAN_FARE.battery },
+      { text: '물', have: game.stock.water, need: CARAVAN_FARE.water },
+    ];
+    const schedule = chain.stage >= 1 ? `상인 트럭: ${when(chain)}` : null;
+    const next = chain.stage === 1 ? `${when(chain)}에 상인이 들른다. 발전기를 고칠 방법(동생·공구 상자·연료통)이 있어야 한다.` : `${when(chain)}에 트럭이 떠난다. 건전지 2개와 물 1병이 필요하다.`;
+    return { steps, requirements, next, schedule };
+  },
+};
+
+export const CHAINS = [RESCUE, GROUP, CAR, SAFEZONE, CARAVAN];
 
 export function openerRetriesLeft(chain) {
   return OPENER_RETRIES[chain.id] - chain.retries;

@@ -1,32 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { PATHS } from '../src/core/events/index.js';
 import { Game } from '../src/core/game.js';
 import { SERVINGS } from '../src/core/items.js';
-import { homeGame, resolveAnyEvent } from './helpers/setup.mjs';
-import { chooseOption, playGame } from './helpers/strategy.mjs';
-
-/** 지정한 연쇄 단계가 다음 날 일어나도록 맞춘 뒤 그날로 넘어간다(조건 검사용). */
-function jumpToStage(game, chainId, stage, data = {}) {
-  const chain = game.director.chains[chainId];
-  chain.stage = stage;
-  chain.opened = stage > 0;
-  chain.seen = true;
-  Object.assign(chain.data, data);
-  game.director.randomEvents = []; // 조건만 떼어 검사한다: 다른 무작위 사건이 끼어들지 않게
-  game.director.pickBonus = () => null;
-  for (const other of Object.values(game.director.chains)) {
-    if (other !== chain && other.status === 'scheduled' && other.due <= game.day + 1) other.due = game.day + 30;
-  }
-  game.director.schedule(chain, game.day + 1);
-  resolveAnyEvent(game);
-  game.endDay();
-  assert.equal(game.event?.chainId, chainId);
-  return game.eventView();
-}
+import { homeGame, jumpToStage, resolveAnyEvent } from './helpers/setup.mjs';
+import { chooseOption, playGame, talkTarget, treat } from './helpers/strategy.mjs';
 
 const option = (view, id) => view.options.find((o) => o.id === id);
 
-for (const target of ['rescue', 'group', 'car']) {
+for (const target of ['rescue', 'group', 'car', 'safezone', 'caravan']) {
   test(`승리 경로 「${target}」: 60초 탐색 → 사건 → 반복 탐사 → 결말까지 실제로 도달한다`, () => {
     // 탐사에서 가족을 잃는 등 운이 나쁘면 질 수도 있다. 그래도 대부분은 그 경로로 이긴다.
     let wins = 0;
@@ -61,7 +43,7 @@ test('경로를 모두 거절하면, 물자가 넉넉해 100일을 버텨도 승
 
 test('탈출 경로가 모두 닫히면 며칠 뒤 하나가 다시 열려, 이길 길이 영영 사라지지는 않는다', () => {
   const game = homeGame({ seed: 31, stock: { food: 999, water: 999, med: 99 } });
-  const paths = ['rescue', 'group', 'car'].map((id) => game.director.chains[id]);
+  const paths = PATHS.map((def) => game.director.chains[def.id]);
   let closedOn = null;
   let reopenedOn = null;
   while (game.phase === 'home' && game.day <= 160 && reopenedOn == null) {
@@ -70,10 +52,14 @@ test('탈출 경로가 모두 닫히면 며칠 뒤 하나가 다시 열려, 이�
       game.chooseOption(chooseOption(game, 'none'));
     }
     if (game.phase !== 'home') break;
+    // 식구를 돌보며 버틴다(마음이 무너져 떠나거나, 혼자 남아 무너지지 않게)
+    const listener = talkTarget(game);
+    if (listener) game.talk(listener);
+    treat(game, 'none');
     game.endDay();
     if (closedOn != null && paths.some((c) => c.status !== 'failed')) reopenedOn = game.day;
   }
-  assert.ok(closedOn != null, '모두 거절하면 세 경로가 다 닫힌다');
+  assert.ok(closedOn != null, '모두 거절하면 다섯 경로가 다 닫힌다');
   assert.ok(reopenedOn != null, '그 뒤 경로 하나가 다시 열린다');
   assert.ok(reopenedOn - closedOn >= 8 && reopenedOn - closedOn <= 16, `${closedOn}일차에 닫히고 ${reopenedOn}일차에 다시 열림`);
   const revived = paths.find((c) => c.status !== 'failed');

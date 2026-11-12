@@ -169,6 +169,7 @@ export const LIFE_EVENTS = [
           const p = ctx.person(ctx.params.target);
           if (ctx.danger(0.4)) {
             p.status = 'lost';
+            p.fate = '목소리를 따라 문을 열고 나갔다.';
             return `그날 밤, ${josa(p.name, '이/가')} 문을 열고 나갔다. 목소리를 따라간 걸까. 다시 돌아오지 않았다.`;
           }
           return '다행히 지쳐 잠들었다.';
@@ -404,6 +405,7 @@ export const LIFE_EVENTS = [
           ctx.take('battery', 1);
           const listeners = ctx.family();
           for (const p of listeners) ctx.mood(p, -1);
+          if (!listeners.length) ctx.mood(ctx.game.me, -1);
           const singer = listeners.length ? ctx.rng.pick(listeners) : null;
           return `${listeners.length ? '다 같이' : '혼자'} 눈을 감고 노래를 들었다.${singer ? ` ${josa(singer.name, '이/가')} 작게 따라 불렀다.` : ''} (건전지 -1)`;
         },

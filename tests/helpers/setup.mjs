@@ -80,6 +80,25 @@ export function stageEvent(game, defId, params = {}) {
   return game.eventView();
 }
 
+/** 지정한 연쇄 단계가 다음 날 일어나도록 맞춘 뒤 그날로 넘어간다(조건 검사용). 다른 사건은 끼어들지 않는다. */
+export function jumpToStage(game, chainId, stage, data = {}) {
+  const chain = game.director.chains[chainId];
+  chain.stage = stage;
+  chain.opened = stage > 0;
+  chain.seen = true;
+  Object.assign(chain.data, data);
+  game.director.randomEvents = [];
+  game.director.pickBonus = () => null;
+  for (const other of Object.values(game.director.chains)) {
+    if (other !== chain && other.status === 'scheduled' && other.due <= game.day + 1) other.due = game.day + 30;
+  }
+  game.director.schedule(chain, game.day + 1);
+  resolveAnyEvent(game);
+  game.endDay();
+  if (game.event?.chainId !== chainId) throw new Error(`${chainId} ${stage}단계가 일어나지 않았다`);
+  return game.eventView();
+}
+
 /** 미션(또는 경로)의 예약된 다음 단계가 일어나는 날까지 하루씩 넘긴다. */
 export function untilChainEvent(game, chainId, maxDays = 12) {
   for (let i = 0; i < maxDays && game.phase === 'home'; i++) {

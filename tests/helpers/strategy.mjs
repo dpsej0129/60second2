@@ -1,8 +1,9 @@
 // 게임 전체를 대신 플레이하는 전략(검증 도구). 목표 승리 경로(target)를 정하면
 // 그 경로의 사건은 수락하고 나머지 경로는 거절하며, 필요한 물자를 탐사로 구해 온다.
-//   target: 'rescue' | 'group' | 'car' | 'all'(모든 경로 수락) | 'none'(모든 경로 거절)
+//   target: 'rescue' | 'group' | 'car' | 'safezone' | 'caravan' | 'all'(모든 경로 수락) | 'none'(모든 경로 거절)
 import { HUNGER_NOTICE, SIM_STEP, THIRST_NOTICE } from '../../src/core/constants.js';
 import { quizAnswerId } from '../../src/core/events/missions.js';
+import { SERVINGS } from '../../src/core/items.js';
 import { RunBot, scramblePlan } from './bot.mjs';
 
 const CHAIN_PREFS = {
@@ -15,6 +16,12 @@ const CHAIN_PREFS = {
   car_found: { go: ['inspect'], stop: ['ignore'] },
   car_repair: { go: ['sis', 'toolkit'], stop: ['later'] },
   car_depart: { go: ['go'], stop: ['wait'] },
+  walk_rumor: { go: ['ask', 'listen'], stop: ['ignore'] },
+  walk_scout: { go: ['map', 'dad', 'me'], stop: ['later'] },
+  walk_depart: { go: ['go'], stop: ['wait'] },
+  caravan_meet: { go: ['trade'], stop: ['ignore'] },
+  caravan_job: { go: ['sis', 'toolkit', 'fuel'], stop: ['none'] },
+  caravan_leave: { go: ['go'], stop: ['wait'] },
 };
 
 // 미션 단계(항상 진행하는 쪽으로)
@@ -60,6 +67,9 @@ const RANDOM_PREFS = {
   cold_snap: ['huddle'],
   flyby: ['watch'],
   stranger_cough: ['water', 'refuse'],
+  white_robes: ['refuse'],
+  gang_note: ['ambush', 'pay', 'ignore'],
+  gang_raid: ['fight', 'bat', 'give'],
 };
 
 const wants = (target, chainId) => target === 'all' || target === chainId;
@@ -88,6 +98,15 @@ export function reserveFor(game, target) {
   if (wants(target, 'group') && group.opened && active(game, 'group')) {
     return { food: group.data.food, water: group.data.water, med: group.stage <= 1 ? 1 : 0 };
   }
+  const walk = game.director.chains.safezone;
+  if (wants(target, 'safezone') && walk.opened && active(game, 'safezone') && walk.stage >= 1) {
+    const n = game.presentPeople().length;
+    return { food: n * SERVINGS, water: n * SERVINGS, med: 0 };
+  }
+  const caravan = game.director.chains.caravan;
+  if (wants(target, 'caravan') && caravan.opened && active(game, 'caravan') && caravan.stage >= 2) {
+    return { food: 0, water: SERVINGS, med: 0 };
+  }
   return { food: 0, water: 0, med: 0 };
 }
 
@@ -99,6 +118,8 @@ export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
   if (target === 'rescue' || target === 'all') first = ['radio', 'battery', 'battery', 'flare'];
   if (target === 'car') first = ['toolkit', 'roadmap', 'canned'];
   if (target === 'group') first = ['medkit', 'water', 'canned'];
+  if (target === 'safezone') first = ['roadmap', 'water', 'canned', 'canned'];
+  if (target === 'caravan') first = ['toolkit', 'battery', 'battery'];
   const legs = [first];
   if (bring.includes('dad')) legs.push(['dad']);
   const pair = ['mom', 'sis'].filter((id) => bring.includes(id));

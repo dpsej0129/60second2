@@ -48,7 +48,8 @@ export class Game {
     this.zombies = zombies;
     this.difficulty = difficultyOf(difficulty);
     // 미션 등으로 생기는 지속 상태. dog: 떠돌이 개 보리와 함께 지냄, shortcut: 탐사 지름길을 앎
-    this.flags = { dog: false, shortcut: false };
+    // gangAnger: 약탈자 쪽지를 무시한 횟수, robes: 하얀 옷의 사람들이 찾아온 횟수
+    this.flags = { dog: false, shortcut: false, gangAnger: 0, gangGone: false, robes: 0, robesGone: false };
 
     this.phase = 'ready'; // ready → run → home → ending
     this.day = 0;
@@ -177,6 +178,7 @@ export class Game {
     for (const p of this.people) {
       if (p.status !== 'outside') continue;
       p.status = family.includes(p.id) ? 'home' : 'left';
+      if (p.status === 'left') p.fate = '60초 안에 데려오지 못했다.';
     }
     this.inventory.takeAll();
     this.run = null;
@@ -259,6 +261,12 @@ export class Game {
       if (s.map < 1) out.push('roadmap');
     }
     if (open('group') && s.med < 1 && this.director.chains.group.stage <= 1) out.push('bandage');
+    if (open('safezone') && this.director.chains.safezone.stage <= 1 && s.map < 1 && !isCapable(this.person('dad'))) out.push('roadmap');
+    if (open('caravan')) {
+      const stage = this.director.chains.caravan.stage;
+      if (stage <= 1 && !isCapable(sis) && !s.toolkit && !s.fuel) out.push('toolkit');
+      if (s.battery < 2) out.push('battery');
+    }
     return out;
   }
 
@@ -281,6 +289,7 @@ export class Game {
 
     if (rng.chance(exp.risk.lost)) {
       p.status = 'lost';
+      p.fate = '물자를 찾아 나갔다가 돌아오지 않았다.';
       report.outcome = 'lost';
       report.text = `${josa(p.name, '이/가')} 탐사에서 돌아오지 않았다.`;
       this.expeditionReport = report;
@@ -623,7 +632,7 @@ export class Game {
       danger: (p) => this.rng.outcome.chance(Math.min(0.95, p * game.difficulty.harm)),
       /** 마음 상태를 바꾼다(+ 나빠짐, - 나아짐). 주인공은 마음 상태가 없다. */
       mood(p, delta) {
-        if (!p || p.isPlayer) return;
+        if (!p || (p.isPlayer && delta > 0)) return; // 주인공은 위로만 받는다(나빠지는 건 혼자 남았을 때뿐)
         p.mood = Math.max(0, Math.min(MOOD_MAX, p.mood + delta));
         if (delta < 0) p.talkedToday = true;
       },
@@ -635,6 +644,10 @@ export class Game {
         return ids;
       },
       win(endingId, extra = {}) {
+        game.pendingWin = { endingId, extra };
+      },
+      /** 탈출이 아닌 결말(기묘한 결말·패배)도 같은 방식으로: 사건 처리가 끝난 뒤에 정해진다 */
+      end(endingId, extra = {}) {
         game.pendingWin = { endingId, extra };
       },
     };
@@ -700,8 +713,9 @@ export class Game {
       }
     }
 
-    this.updateMoods(present, report);
+    const lostMind = this.updateMoods(present, report);
     this.checkDeaths(report);
+    if (lostMind && !this.ending) this.setEnding('madness');
     for (const line of report) this.addLog(line.text, line.tone || 'night', 'night');
     this.nightReport = report.map((line) => line.text);
     if (this.ending) {
@@ -744,12 +758,45 @@ export class Game {
       }
       if (p.mood >= MOOD_BROKEN && !p.talkedToday && rng.chance(0.25 * this.difficulty.harm)) {
         p.status = 'lost';
+        p.fate = '새벽에 목소리를 따라 집을 나가 돌아오지 않았다.';
         report.push({
           text: `새벽에 문이 열리는 소리가 났다. ${josa(p.name, '이/가')} 목소리를 따라 밖으로 나가 버렸다. 다시 돌아오지 않았다.`,
           tone: 'bad',
         });
       }
     }
+    return this.updateLoneliness(present, report);
+  }
+
+  /**
+   * 주인공 혼자 남으면(탐사 나간 식구도 없으면) 밤마다 마음이 무너져 간다. 혼자인 날이 길수록 빨라지고,
+   * 보리가 곁에 있으면 훨씬 느려진다. 끝까지 무너지면 '홀로 남은 집'. 식구와 함께 지내면 다시 나아진다.
+   * 결말이 정해졌으면 true.
+   */
+  updateLoneliness(present, report) {
+    const me = this.me;
+    if (me.status !== 'home') return false;
+    const alone = present.every((p) => p.isPlayer) && !this.expedition;
+    if (!alone) {
+      this.aloneDays = 0;
+      if (me.mood > 0) me.mood -= 1;
+      return false;
+    }
+    this.aloneDays = (this.aloneDays ?? 0) + 1;
+    if (this.aloneDays < 3) return false; // 처음 며칠은 버틴다
+    const rng = this.rng.outcome;
+    const worse = (0.08 + 0.02 * this.aloneDays) * this.difficulty.harm * (this.flags.dog ? 0.4 : 1);
+    if (rng.chance(Math.min(0.9, worse)) && me.mood < MOOD_MAX) {
+      me.mood += 1;
+      const lines = {
+        1: '혼잣말이 늘었다. 대답해 줄 사람이 없다.',
+        2: '밤마다 가족의 목소리가 들리는 것 같아 잠을 설쳤다.',
+        3: '벽에 가족의 얼굴을 그렸다. 매일 그 앞에서 하루 일을 이야기한다.',
+        4: '그림 속 가족이 대답을 했다. 이상하게도 무섭지 않았다.',
+      };
+      report.push({ text: lines[me.mood], tone: me.mood >= MOOD_LOW ? 'bad' : 'warn' });
+    }
+    return me.mood >= MOOD_BROKEN && rng.chance(0.35);
   }
 
   checkDeaths(report = null) {
@@ -762,6 +809,7 @@ export class Game {
       if (!cause) continue;
       p.status = 'dead';
       p.cause = cause;
+      p.fate = `${josa(cause, '으로/로')} 세상을 떠났다.`;
       const line = `${josa(p.name, '이/가')} ${josa(cause, '으로/로')} 숨을 거뒀다.`;
       if (report) report.push({ text: line, tone: 'bad' });
       else this.addLog(line, 'bad', 'death');
@@ -820,14 +868,18 @@ export class Game {
     let text = def.text;
     if (id === 'died') text = `${josa(extra.cause, '으로/로')} 쓰러졌다. ${def.text}`;
     if (extra.leftBehind?.length) text += ` 옥상에 남겨진 ${extra.leftBehind.join(', ')}의 모습이 눈에 밟힌다.`;
-    // 탈출하는 날 탐사를 나가 있던 사람은 함께 가지 못한다.
-    const awayAtEscape = def.type === 'victory' ? this.people.filter((p) => p.status === 'away') : [];
-    for (const p of awayAtEscape) p.status = 'lost';
-    if (awayAtEscape.length) text += ` 탐사를 나간 ${awayAtEscape.map((p) => p.name).join(', ')}을 기다릴 수 없었다.`;
+    // 집을 떠나는 결말이면, 그날 탐사를 나가 있던 사람은 함께 가지 못한다.
+    const awayAtEscape = def.type !== 'defeat' ? this.people.filter((p) => p.status === 'away') : [];
+    for (const p of awayAtEscape) {
+      p.status = 'lost';
+      p.fate = '탐사에서 돌아오기 전에 떠나야 했다.';
+    }
+    if (awayAtEscape.length) text += ` 탐사를 나간 ${josa(nameList(awayAtEscape.map((p) => p.name)), '을/를')} 기다릴 수 없었다.`;
     if (def.type === 'victory' && this.flags.dog) text += ' 보리도 꼬리를 흔들며 끝까지 함께했다.';
     this.ending = {
       id,
       type: def.type,
+      icon: def.icon,
       title: def.title,
       text,
       day: this.day,
