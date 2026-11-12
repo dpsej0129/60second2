@@ -214,6 +214,39 @@ function planter(stage, yieldCount) {
 
 // ── 방 ────────────────────────────────────────
 
+/** 처음 집: 나무 벽, 판자로 막은 창 */
+function houseRoom() {
+  return `<rect x="0" y="0" width="960" height="${FLOOR}" fill="#3a3129"/>
+      ${Array.from({ length: 20 }, (_, i) => `<rect x="${i * 48 + 20}" y="0" width="2" height="${FLOOR}" fill="#2f2822"/>`).join('')}
+      <rect x="0" y="${FLOOR - 8}" width="960" height="8" fill="#2a221b"/>
+      <rect x="0" y="${FLOOR}" width="960" height="${300 - FLOOR}" fill="#4b3a29"/>
+      ${Array.from({ length: 8 }, (_, i) => `<line x1="${i * 130}" y1="${FLOOR}" x2="${i * 130 - 40}" y2="300" stroke="#3c2e20" stroke-width="2"/>`).join('')}
+      <g>
+        <rect x="430" y="40" width="150" height="96" fill="#1b2430" stroke="#5b4330" stroke-width="8"/>
+        <rect x="422" y="62" width="166" height="14" fill="#8a6a46" transform="rotate(-6 505 69)"/>
+        <rect x="422" y="98" width="166" height="14" fill="#8a6a46" transform="rotate(5 505 105)"/>
+      </g>`;
+}
+
+/** 지하 방공호: 콘크리트 벽, 환기구, 물탱크 */
+function bunkerRoom() {
+  return `<rect x="0" y="0" width="960" height="${FLOOR}" fill="#3b4045"/>
+      ${Array.from({ length: 6 }, (_, i) => `<rect x="0" y="${i * 34 + 10}" width="960" height="2" fill="#33373b"/>`).join('')}
+      ${Array.from({ length: 10 }, (_, i) => `<rect x="${i * 100 + (i % 2) * 50}" y="0" width="2" height="${FLOOR}" fill="#34383c"/>`).join('')}
+      <rect x="0" y="${FLOOR - 8}" width="960" height="8" fill="#2a2d30"/>
+      <rect x="0" y="${FLOOR}" width="960" height="${300 - FLOOR}" fill="#4a4d50"/>
+      <g data-ref="vent">
+        <rect x="450" y="44" width="110" height="60" rx="4" fill="#2a2e33" stroke="#5c636b" stroke-width="5"/>
+        ${Array.from({ length: 5 }, (_, i) => `<rect x="458" y="${54 + i * 10}" width="94" height="4" fill="#5c636b"/>`).join('')}
+      </g>
+      <g data-ref="tank">
+        <rect x="300" y="40" width="70" height="110" rx="10" fill="#516270" stroke="#3a4650" stroke-width="4"/>
+        <rect x="330" y="150" width="8" height="18" fill="#3a4650"/>
+        <text class="shelter-note" x="335" y="100" text-anchor="middle" fill="#d6dde3">물</text>
+      </g>
+      <text class="shelter-name" x="505" y="130" text-anchor="middle">방공호</text>`;
+}
+
 export function renderShelter(game) {
   const present = game.presentPeople();
   const away = game.people.filter((p) => p.status === 'away');
@@ -233,19 +266,11 @@ export function renderShelter(game) {
     .filter(([, n]) => n > 0)
     .map(([k, n]) => `${RESOURCES[k].name} ${n}`)
     .join(', ');
-  const label = `집 안: ${present.map((p) => p.name).join(', ')}${game.flags.dog ? ', 보리(개)' : ''}${away.length ? ` (탐사 중: ${away.map((p) => p.name).join(', ')})` : ''}. 재고: ${items || '없음'}`;
+  const bunker = game.flags.shelter === 'bunker';
+  const label = `${bunker ? '방공호' : '집'} 안: ${present.map((p) => p.name).join(', ')}${game.flags.dog ? ', 보리(개)' : ''}${away.length ? ` (탐사 중: ${away.map((p) => p.name).join(', ')})` : ''}. 재고: ${items || '없음'}`;
   return `
-    <svg class="shelter" viewBox="0 0 960 300" role="img" aria-label="${esc(label)}" data-ref="shelter">
-      <rect x="0" y="0" width="960" height="${FLOOR}" fill="#3a3129"/>
-      ${Array.from({ length: 20 }, (_, i) => `<rect x="${i * 48 + 20}" y="0" width="2" height="${FLOOR}" fill="#2f2822"/>`).join('')}
-      <rect x="0" y="${FLOOR - 8}" width="960" height="8" fill="#2a221b"/>
-      <rect x="0" y="${FLOOR}" width="960" height="${300 - FLOOR}" fill="#4b3a29"/>
-      ${Array.from({ length: 8 }, (_, i) => `<line x1="${i * 130}" y1="${FLOOR}" x2="${i * 130 - 40}" y2="300" stroke="#3c2e20" stroke-width="2"/>`).join('')}
-      <g>
-        <rect x="430" y="40" width="150" height="96" fill="#1b2430" stroke="#5b4330" stroke-width="8"/>
-        <rect x="422" y="62" width="166" height="14" fill="#8a6a46" transform="rotate(-6 505 69)"/>
-        <rect x="422" y="98" width="166" height="14" fill="#8a6a46" transform="rotate(5 505 105)"/>
-      </g>
+    <svg class="shelter ${bunker ? 'bunker' : ''}" viewBox="0 0 960 300" role="img" aria-label="${esc(label)}" data-ref="shelter" data-place="${bunker ? 'bunker' : 'house'}">
+      ${bunker ? bunkerRoom() : houseRoom()}
       <line x1="700" y1="0" x2="700" y2="44" stroke="#222" stroke-width="2"/>
       <circle class="lamp-glow" cx="700" cy="54" r="40" fill="#ffd77a" opacity=".08"/>
       <circle cx="700" cy="52" r="9" fill="#ffe8a8"/>

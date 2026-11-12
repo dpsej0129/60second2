@@ -120,7 +120,7 @@ export const VISITOR_EVENTS = [
     minDay: 20,
     cooldown: 7,
     maxCount: 6,
-    when: (game) => !game.flags.gangGone && game.flags.gangAnger < 2,
+    when: (game) => !game.flags.gangGone && game.flags.gangAnger < 2 && game.flags.shelter !== 'bunker',
     text: (game) =>
       game.flags.gangAnger === 0
         ? '아침에 보니 현관문에 붉은 페인트로 해골이 그려져 있다. 쪽지가 꽂혀 있다. "이 동네는 우리 구역이다. 통조림 1캔과 물 1병을 문 앞에 둬라. 안 그러면 다시 온다."'
@@ -173,7 +173,7 @@ export const VISITOR_EVENTS = [
     weight: 10,
     minDay: 20,
     cooldown: 2,
-    when: (game) => !game.flags.gangGone && game.flags.gangAnger >= 2,
+    when: (game) => !game.flags.gangGone && game.flags.gangAnger >= 2 && game.flags.shelter !== 'bunker',
     text: () => '한밤중, 문짝을 부수는 소리에 잠이 깼다. 쇠파이프를 든 사람들이 현관으로 밀고 들어온다. "경고했지?"',
     options: [
       {

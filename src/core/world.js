@@ -227,3 +227,107 @@ export function lineOfSight(a, b, solids = SOLIDS) {
   for (const s of solids) if (segmentHitsRect(a.x, a.y, b.x, b.y, s)) return false;
   return true;
 }
+
+// ── 이사 지도: 왼쪽 우리 집 → 잔해가 널린 거리 → 오른쪽 지하 방공호 ──────────
+
+export const MOVE_SECONDS = 90; // 이사할 때 짐과 식구를 옮기는 제한 시간
+
+const OLD_HOUSE = rect(60, 170, 460, 380, 'old-house');
+const OLD_INNER = rect(76, 186, 428, 348, 'old-inner');
+const OLD_WALLS = [
+  rect(60, 170, 140, 16, 'wall'),
+  rect(270, 170, 250, 16, 'wall'),
+  rect(60, 534, 460, 16, 'wall'),
+  rect(60, 170, 16, 380, 'wall'),
+  rect(504, 170, 16, 150, 'wall'),
+  rect(504, 400, 16, 150, 'wall'),
+];
+const OLD_DOORS = [
+  { id: 'front', gap: rect(504, 320, 16, 80, 'door'), inside: { x: 478, y: 360 }, outside: { x: 552, y: 360 } },
+  { id: 'back', gap: rect(200, 170, 70, 16, 'door'), inside: { x: 212, y: 204 }, outside: { x: 235, y: 140 } },
+];
+// 장롱·찬장 같은 가구(짐을 쌓아 둔 곳). 짐 자리는 가구마다 위·아래 두 곳.
+const FURNITURE_H = 120;
+const FURNITURE = [
+  rect(130, 215, 40, FURNITURE_H, 'rack'),
+  rect(230, 215, 40, FURNITURE_H, 'rack'),
+  rect(330, 215, 40, FURNITURE_H, 'rack'),
+  rect(130, 395, 40, FURNITURE_H, 'rack'),
+  rect(230, 395, 40, FURNITURE_H, 'rack'),
+];
+const MOVE_OBSTACLES = [
+  rect(610, 110, 140, 60, 'car'),
+  rect(690, 480, 60, 140, 'car'),
+  rect(820, 250, 110, 50, 'rubble'),
+  rect(850, 600, 120, 60, 'car'),
+  rect(930, 80, 60, 130, 'car'),
+  rect(870, 380, 50, 40, 'rubble'),
+];
+const BUNKER = rect(1000, 400, 200, 200, 'house');
+const BUNKER_ZONE = rect(956, 460, 44, 80, 'home-zone');
+const MOVE_SOLIDS = [...OLD_WALLS, ...FURNITURE, ...MOVE_OBSTACLES, BUNKER];
+
+/** 이삿짐: 집 재고를 옮길 수 있는 물품 묶음으로(통조림·생수는 한 캔·한 병씩) */
+export const STOCK_TO_ITEM = {
+  food: 'canned',
+  water: 'water',
+  med: 'bandage',
+  radio: 'radio',
+  battery: 'battery',
+  flare: 'flare',
+  weapon: 'bat',
+  toolkit: 'toolkit',
+  fuel: 'fuel',
+  map: 'roadmap',
+};
+
+export function movingGoods(stock, servings) {
+  const goods = [];
+  for (const [key, itemId] of Object.entries(STOCK_TO_ITEM)) {
+    const n = key === 'food' || key === 'water' ? Math.ceil(stock[key] / servings) : stock[key];
+    if (n > 0) goods.push([itemId, n]);
+  }
+  return goods;
+}
+
+/**
+ * 이사 지도. goods: [[물품 id, 개수]] — 가구마다 쌓아 두고(자리는 무작위), 식구는 집 안에서 기다린다.
+ */
+export function createMoveMap({ goods, rng }) {
+  const slots = FURNITURE.flatMap((rack) => [0, 1].map((slot) => ({ rack, slot })));
+  const order = rng ? rng.shuffle(slots) : slots;
+  const shelves = goods.slice(0, slots.length).map(([itemId, stock], i) => {
+    const { rack, slot } = order[i];
+    return {
+      id: `pile-${itemId}`,
+      itemId,
+      initialStock: stock,
+      rack,
+      x: rack.x + rack.w / 2,
+      y: rack.y + FURNITURE_H * (slot ? 0.75 : 0.25),
+    };
+  });
+  return {
+    id: 'move',
+    outer: OLD_HOUSE,
+    indoor: OLD_INNER,
+    doors: OLD_DOORS,
+    walls: OLD_WALLS,
+    racks: FURNITURE,
+    cars: MOVE_OBSTACLES,
+    house: BUNKER,
+    homeZone: BUNKER_ZONE,
+    homeDoor: { x: 1000, y: 500 },
+    start: { x: 430, y: 480 },
+    familySpots: { dad: { x: 440, y: 222 }, mom: { x: 452, y: 300 }, sis: { x: 330, y: 452 } },
+    street: rect(560, 24, 360, 672, 'street'),
+    spawnInside: null,
+    shelves,
+    solids: MOVE_SOLIDS,
+    zombieSolids: [...MOVE_SOLIDS, BUNKER_ZONE],
+    laneY: 360,
+    yard: rect(925, 330, 615, 390, 'park'),
+    labels: { indoor: '우리 집', door: '현관 →', doorAt: { x: 566, y: 300 }, home: '방공호', arrive: '도착', inside: '집 안' },
+    colors: { floor: '#3b3530', house: '#626b74', roof: '#3d444c', yard: '#22301f' },
+  };
+}

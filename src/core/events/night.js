@@ -131,6 +131,17 @@ export const NIGHT_EVENTS = [
       return { text: `${josa(p.name, '이/가')} 밤새 열에 시달렸다. 아침에도 일어나지 못한다.`, tone: 'bad' };
     },
   },
+  {
+    id: 'tank',
+    weight: 2.5,
+    good: true,
+    when: (game) => game.flags.shelter === 'bunker',
+    run(game, rng) {
+      const got = rng.int(1, 3);
+      game.stock.water += got;
+      return { text: `방공호 물탱크 꼭지에서 밤새 물이 떨어졌다. 아침까지 ${formatAmount('water', got)}만큼 받아 두었다.`, tone: 'good' };
+    },
+  },
   // ── 아포칼립스에서만 ─────────────────────────
   {
     id: 'blood_moon',

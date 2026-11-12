@@ -81,6 +81,7 @@ const RANDOM_PREFS = {
   acid_rain: ['toolkit', 'endure'],
   bombing: ['cellar', 'leave'],
   turned_neighbor: ['toolkit', 'dad', 'endure'],
+  bunker_found: ['move', 'stay'],
 };
 
 const wants = (target, chainId) => target === 'all' || target === chainId;
@@ -139,6 +140,57 @@ export function scrambleLegs(target, bring = ['dad', 'mom', 'sis']) {
   if (target === 'car') legs.push(['fuel', 'water', 'water']);
   for (let i = 0; i < 4; i++) legs.push(['water', 'water', 'canned', 'canned']);
   return legs;
+}
+
+/** 이사 계획: 식구를 먼저 옮기고, 물·통조림 한 짐 → 귀한 물건 → 남은 물·통조림 순으로 가방 4칸에 맞춰 나른다. */
+const MOVE_PRIORITY = ['radio', 'flare', 'bandage', 'roadmap', 'fuel', 'battery', 'toolkit', 'bat', 'water', 'canned'];
+export function moveLegs(game) {
+  const move = game.pendingMove ?? null;
+  const run = game.run;
+  const map = run?.map ?? move.map;
+  const stock = { ...(run?.martStock ?? move.martStock) };
+  const familyIds = run?.familyIds ?? move.familyIds;
+  const legs = [];
+  if (familyIds.includes('dad')) legs.push(['dad']);
+  const pair = ['mom', 'sis'].filter((id) => familyIds.includes(id));
+  if (pair.length) legs.push(pair);
+  const queue = [];
+  // 물과 통조림은 번갈아 넣어 어느 한쪽만 남지 않게 한다
+  for (const id of MOVE_PRIORITY) {
+    const shelf = map.shelves.find((s) => s.itemId === id);
+    if (!shelf) continue;
+    for (let i = 0; i < stock[shelf.id]; i++) queue.push(id);
+  }
+  const food = queue.filter((id) => id === 'canned');
+  const water = queue.filter((id) => id === 'water');
+  const rest = queue.filter((id) => id !== 'canned' && id !== 'water');
+  const mixed = [];
+  while (food.length || water.length) {
+    if (water.length) mixed.push(water.shift());
+    if (food.length) mixed.push(food.shift());
+  }
+  let leg = [];
+  let used = 0;
+  for (const id of [...mixed.slice(0, 4), ...rest, ...mixed.slice(4)]) {
+    const slots = ['toolkit', 'fuel'].includes(id) ? 2 : 1;
+    if (used + slots > 4) {
+      legs.push(leg);
+      leg = [];
+      used = 0;
+    }
+    leg.push(id);
+    used += slots;
+  }
+  if (leg.length) legs.push(leg);
+  return legs;
+}
+
+/** 이사 사건을 고른 뒤: 카운트다운을 누르고 봇으로 짐을 옮긴다. */
+export function playMove(game, botOptions) {
+  if (game.phase !== 'ready' || !game.pendingMove) return null;
+  const legs = moveLegs(game);
+  game.startRun();
+  return playScramble(game, legs, botOptions);
 }
 
 /** 실시간 구간을 봇으로 끝까지 진행한다. */
@@ -252,6 +304,7 @@ export function playGame(game, { target = 'all', bring = ['dad', 'mom', 'sis'], 
     onDay?.(game);
     for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
       game.chooseOption(chooseOption(game, target));
+      if (game.phase === 'ready') playMove(game); // 이사하기로 했으면 짐을 옮긴다
     }
     if (game.phase !== 'home') break;
     const plan = expeditionPlan(game);

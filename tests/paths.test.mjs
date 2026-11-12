@@ -4,7 +4,7 @@ import { PATHS } from '../src/core/events/index.js';
 import { Game } from '../src/core/game.js';
 import { SERVINGS } from '../src/core/items.js';
 import { homeGame, jumpToStage, resolveAnyEvent } from './helpers/setup.mjs';
-import { chooseOption, playGame, talkTarget, treat } from './helpers/strategy.mjs';
+import { chooseOption, playGame, playMove, talkTarget, treat } from './helpers/strategy.mjs';
 
 const option = (view, id) => view.options.find((o) => o.id === id);
 
@@ -32,6 +32,7 @@ test('경로를 모두 거절하면, 물자가 넉넉해 100일을 버텨도 승
     while (game.phase === 'home' && game.day <= 100) {
       for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
         game.chooseOption(chooseOption(game, 'none'));
+        if (game.phase === 'ready') playMove(game); // 방공호로 이사하기로 했으면 짐을 옮긴다
       }
       if (game.phase !== 'home') break;
       game.endDay();
@@ -50,6 +51,7 @@ test('탈출 경로가 모두 닫히면 며칠 뒤 하나가 다시 열려, 이�
     if (closedOn == null && paths.every((c) => c.status === 'failed')) closedOn = game.day;
     for (let i = 0; i < 4 && game.phase === 'home' && game.event && !game.event.resolved; i++) {
       game.chooseOption(chooseOption(game, 'none'));
+      if (game.phase === 'ready') playMove(game);
     }
     if (game.phase !== 'home') break;
     // 식구를 돌보며 버틴다(마음이 무너져 떠나거나, 혼자 남아 무너지지 않게)

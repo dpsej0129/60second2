@@ -25,6 +25,7 @@ export const CRISIS_EVENTS = [
     minDay: 25,
     cooldown: 30,
     maxCount: 2,
+    when: (game) => game.flags.shelter !== 'bunker', // 콘크리트 방공호는 불이 번지지 않는다
     text: () => '한밤중, 매캐한 냄새에 눈을 떴다. 촛불이 커튼에 옮겨붙어 거실에 연기가 차오른다!',
     options: [
       {
@@ -114,7 +115,9 @@ export const CRISIS_EVENTS = [
     minDay: 28,
     when: (game) => game.flags.hordeDay != null && game.day >= game.flags.hordeDay,
     text: (game) =>
-      game.flags.barricade
+      game.flags.shelter === 'bunker'
+        ? '새벽, 땅이 울린다. 좀비 떼가 방공호 위 공원을 지나간다. 철문 너머로 발소리가 끝없이 이어진다.'
+        : game.flags.barricade
         ? '새벽, 땅이 울린다. 거리가 좀비로 가득 찼다. 덧대 둔 판자가 삐걱거린다.'
         : '새벽, 땅이 울린다. 거리가 좀비로 가득 찼다. 아무것도 막지 않은 문이 덜컹거린다.',
     options: [
@@ -134,9 +137,10 @@ export const CRISIS_EVENTS = [
       {
         id: 'hold',
         label: '불을 끄고 숨죽인 채 버틴다',
-        note: (game) => (game.flags.barricade ? '판자를 덧대 두었다' : '아무것도 막아 두지 않았다'),
+        note: (game) =>
+          game.flags.shelter === 'bunker' ? '두꺼운 철문이 있다' : game.flags.barricade ? '판자를 덧대 두었다' : '아무것도 막아 두지 않았다',
         resolve(ctx) {
-          const barricade = ctx.game.flags.barricade;
+          const barricade = ctx.game.flags.barricade || ctx.game.flags.shelter === 'bunker';
           hordePassed(ctx.game);
           if (barricade) return '판자가 버텼다. 해 질 녘, 좀비 떼는 남쪽으로 흘러갔다.';
           if (ctx.danger(0.3)) {

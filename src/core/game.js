@@ -21,7 +21,7 @@ import { rollNightEvent } from './events/night.js';
 import { expeditionRisk, rollItems, rollLoot } from './expedition.js';
 import { Inventory, isPerson } from './inventory.js';
 import { itemSummary, mealLines, morningStatus, nameList } from './journal.js';
-import { emptyStock, formatResources, ITEMS } from './items.js';
+import { SERVINGS, emptyStock, formatResources, ITEMS } from './items.js';
 import {
   FAMILY_DEFS,
   PLAYER_DEF,
@@ -38,7 +38,7 @@ import {
 import { Rng, randomSeed } from './rng.js';
 import { createRun, stepRun } from './run.js';
 import { josa } from './text.js';
-import { createMartMap, initialMartStock } from './world.js';
+import { MOVE_SECONDS, createMartMap, createMoveMap, initialMartStock, movingGoods } from './world.js';
 
 const evaluate = (value, ...args) => (typeof value === 'function' ? value(...args) : value);
 
@@ -53,6 +53,9 @@ export class Game {
     // gangAnger: 약탈자 쪽지를 무시한 횟수, robes: 하얀 옷의 사람들이 찾아온 횟수
     // hordeDay: 좀비 떼가 지나갈 날, barricade: 그 전에 문과 창을 막았는지
     this.nightHistory = {}; // 밤사이 사건이 마지막으로 일어난 날
+    this.pendingMove = null; // 이사 준비 중이면 { map, martStock, family, … }
+    this.pendingMovePlace = null;
+    this.moves = 0;
     this.nightEvents = true; // 밤사이 사건을 굴릴지(규칙을 떼어 검사할 때만 끈다)
     this.tripStreak = 0; // 쉬지 않고 이어 보낸 탐사 수
     this.restDays = 0; // 아무도 탐사를 나가 있지 않은 밤의 수(하룻밤마다 연속 탐사 피로가 하나 풀린다)
@@ -65,6 +68,7 @@ export class Game {
       robesGone: false,
       hordeDay: null,
       barricade: false,
+      shelter: null, // 이사한 곳('bunker': 지하 방공호). null이면 처음 집
     };
 
     this.phase = 'ready'; // ready → run → home → ending
@@ -190,11 +194,116 @@ export class Game {
     if (this.run.outcome) this.finishRun();
   }
 
+  // ── 이사(다른 곳으로 옮기기) ─────────────────────
+
+  /** 사건에서 이사하기로 하면: 짐을 가구 위에 쌓아 두고 이사 지도를 준비한다(카운트다운은 아직). */
+  prepareMove(place = 'bunker') {
+    const goods = movingGoods(this.stock, SERVINGS);
+    const map = createMoveMap({ goods, rng: this.rng.run });
+    const movers = this.presentPeople().filter((p) => !p.isPlayer);
+    this.pendingMove = {
+      kind: 'move',
+      place,
+      map,
+      martStock: initialMartStock(map),
+      family: movers.map((p) => ({ id: p.id, ...map.familySpots[p.id] })),
+      familyIds: movers.map((p) => p.id),
+      duration: MOVE_SECONDS,
+      oldStock: { ...this.stock },
+    };
+    this.phase = 'ready';
+  }
+
+  startMoveRun() {
+    const move = this.pendingMove;
+    if (this.phase !== 'ready' || !move) return false;
+    this.inventory.takeAll();
+    for (const id of move.familyIds) this.person(id).status = 'outside';
+    this.run = createRun({
+      kind: 'move',
+      map: move.map,
+      duration: move.duration,
+      inventory: this.inventory,
+      martStock: { ...move.martStock },
+      rng: this.rng.run,
+      playerHealth: this.me.health,
+      family: move.family,
+      zombies: this.zombies,
+      danger: this.difficulty.run,
+    });
+    this.run.familyIds = move.familyIds;
+    this.phase = 'run';
+    this.emit();
+    return true;
+  }
+
+  /** 이사가 끝났을 때: 옮긴 것만 남고, 못 옮긴 짐은 잃고, 데려오지 못한 식구는 남겨진다. */
+  finishMove(run) {
+    const move = this.pendingMove;
+    this.pendingMove = null;
+    this.run = null;
+    this.inventory.takeAll();
+    const items = this.lastRun.items;
+    if (run.outcome !== 'home') {
+      for (const id of move.familyIds) this.person(id).status = 'home';
+      const text =
+        run.outcome === 'timeout'
+          ? `이삿짐을 나르다 시간이 다 됐다. 방공호 철문이 등 뒤에서 닫히는 소리를 들었다. 거리의 좀비들이 사방에서 몰려들었다.`
+          : `이삿짐을 나르다 좀비에게 붙잡혔다. 방공호까지 몇 걸음이 남아 있었다.`;
+      this.setEnding(run.outcome, { text });
+      return;
+    }
+    const old = move.oldStock;
+    const stock = emptyStock();
+    const cans = items.filter((id) => id === 'canned').length;
+    const bottles = items.filter((id) => id === 'water').length;
+    stock.food = Math.min(old.food, cans * SERVINGS);
+    stock.water = Math.min(old.water, bottles * SERVINGS);
+    for (const id of items) {
+      if (id === 'canned' || id === 'water') continue;
+      for (const [key, n] of Object.entries(ITEMS[id].gives)) stock[key] += n;
+    }
+    const lostStock = {};
+    for (const key of Object.keys(stock)) if (old[key] > stock[key]) lostStock[key] = old[key] - stock[key];
+    this.stock = stock;
+    const brought = [];
+    const left = [];
+    for (const id of move.familyIds) {
+      const p = this.person(id);
+      if (this.lastRun.family.includes(id)) {
+        p.status = 'home';
+        brought.push(p.name);
+      } else {
+        p.status = 'left';
+        p.fate = '이사하던 날 데려오지 못했다.';
+        left.push(p.name);
+      }
+    }
+    this.flags.shelter = move.place;
+    this.flags.gangAnger = 0; // 약탈자들은 새 은신처를 모른다
+    this.flags.hordeDay = null;
+    this.moves += 1;
+    const lostText = formatResources(lostStock);
+    this.addLog(
+      `${run.duration}초 동안 짐을 날랐다. ${run.endedBy === 'enter' ? `${Math.max(1, Math.round(run.timeLeft))}초를 남기고` : '시간이 다 된 순간'} 방공호 철문을 닫았다.${
+        lostText ? ` 옛집에 두고 온 것: ${lostText}.` : ' 짐은 하나도 남기지 않고 옮겼다.'
+      }`,
+      lostText ? 'warn' : 'good',
+      'action',
+    );
+    if (left.length) this.addLog(`${josa(nameList(left), '을/를')} 데려오지 못했다. 옛집에 남아 있을지도 모른다.`, 'bad', 'action');
+    else if (brought.length) this.addLog('식구 모두 방공호로 옮겨 왔다.', 'good', 'action');
+    if (this.flags.dog) this.addLog('보리는 누구보다 먼저 방공호 계단을 뛰어 내려갔다.', 'good', 'action');
+    this.phase = 'home';
+    this.syncRations();
+  }
+
   finishRun() {
     const run = this.run;
     const items = run.delivered.filter((id) => !isPerson(id));
     const family = run.delivered.filter(isPerson);
     this.lastRun = {
+      kind: run.kind,
       outcome: run.outcome,
       endedBy: run.endedBy,
       delivered: [...run.delivered],
@@ -202,7 +311,13 @@ export class Game {
       family,
       timeLeft: run.timeLeft,
       elapsed: run.elapsed,
+      duration: run.duration,
     };
+    if (run.kind === 'move') {
+      this.finishMove(run);
+      this.emit();
+      return;
+    }
     if (run.outcome !== 'home') {
       this.setEnding(run.outcome);
       this.emit();
@@ -634,6 +749,13 @@ export class Game {
       this.pendingWin = null;
       this.setEnding(endingId, extra);
     }
+    if (!this.ending && this.pendingMovePlace) {
+      const place = this.pendingMovePlace;
+      this.pendingMovePlace = null;
+      this.prepareMove(place);
+      this.emit();
+      return { ok: true, text };
+    }
     if (!this.ending) {
       this.syncRations();
       if (this.eventQueue.length) {
@@ -694,6 +816,10 @@ export class Game {
       },
       win(endingId, extra = {}) {
         game.pendingWin = { endingId, extra };
+      },
+      /** 다른 곳으로 이사한다(사건 처리가 끝난 뒤 실시간 구간이 시작된다) */
+      move(place) {
+        game.pendingMovePlace = place;
       },
       /** 탈출이 아닌 결말(기묘한 결말·패배)도 같은 방식으로: 사건 처리가 끝난 뒤에 정해진다 */
       end(endingId, extra = {}) {
