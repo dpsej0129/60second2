@@ -370,14 +370,17 @@ export const LIFE_EVENTS = [
     weight: 1.5,
     minDay: 4,
     maxCount: 1,
+    when: (game) => family(game).length > 0,
     text: () => '다락 상자 속에서 먼지 쌓인 보드게임이 나왔다. 말 몇 개가 없지만 병뚜껑으로 대신하면 된다.',
     options: [
       {
         id: 'play',
         label: '다 같이 한 판 한다',
         resolve(ctx) {
-          for (const p of ctx.family()) ctx.mood(p, -1);
-          return '밤늦도록 웃음소리를 죽여 가며 게임을 했다. 아빠가 지고 나서 한 판만 더 하자고 졸랐다.';
+          const players = ctx.family();
+          for (const p of players) ctx.mood(p, -1);
+          const loser = players.length ? ctx.rng.pick(players) : null;
+          return `밤늦도록 웃음소리를 죽여 가며 게임을 했다.${loser ? ` ${josa(loser.name, '이/가')} 지고 나서 한 판만 더 하자고 졸랐다.` : ''}`;
         },
       },
       { id: 'burn', label: '불쏘시개로 쓴다', resolve: () => '종이 상자는 잘 탔다. 손이 조금 따뜻해졌다.' },
@@ -399,8 +402,10 @@ export const LIFE_EVENTS = [
         check: needStock('battery'),
         resolve(ctx) {
           ctx.take('battery', 1);
-          for (const p of ctx.family()) ctx.mood(p, -1);
-          return '다 같이 눈을 감고 노래를 들었다. 엄마가 작게 따라 불렀다. (건전지 -1)';
+          const listeners = ctx.family();
+          for (const p of listeners) ctx.mood(p, -1);
+          const singer = listeners.length ? ctx.rng.pick(listeners) : null;
+          return `${listeners.length ? '다 같이' : '혼자'} 눈을 감고 노래를 들었다.${singer ? ` ${josa(singer.name, '이/가')} 작게 따라 불렀다.` : ''} (건전지 -1)`;
         },
       },
       { id: 'off', label: '건전지를 아끼려고 끈다', resolve: () => '노래는 첫 소절에서 끊겼다.' },

@@ -136,7 +136,7 @@ export function mealLines({ present, ate, drank, usedFood, usedWater, unfed, unw
         : { text: '어젯밤은 아무것도 꺼내지 않고 아껴 두었다.', tone: '' },
     );
   } else if (ate.length && drank.length && ate.join() === drank.join()) {
-    lines.push({ text: `저녁에 ${who(ate)} ${josa(food, '과/와')} ${josa(water, '을/를')} ${share(ate)}먹었다.`, tone: '' });
+    lines.push({ text: `저녁에 ${who(ate)} ${josa(food, '을/를')} ${share(ate)}먹고 ${josa(water, '을/를')} 마셨다.`, tone: '' });
   } else {
     if (ate.length) lines.push({ text: `저녁에 ${who(ate)} ${josa(food, '을/를')} ${share(ate)}먹었다.`, tone: '' });
     if (drank.length) {

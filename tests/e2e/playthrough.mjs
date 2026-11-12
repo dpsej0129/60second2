@@ -148,31 +148,47 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
   const present = await page.evaluate(() => window.game.presentPeople().map((p) => p.id));
   for (const id of present) assert.ok(await page.$(`[data-ref="shelter"] [data-person="${id}"]`), `집 안 장면에 ${id}`);
   const need = await text(page, '.need');
-  assert.match(need, new RegExp(`전원 한 끼 식량 ${present.length} · 물 ${present.length}`), '집에 있는 사람 수만큼 필요량');
-  checks.need = need.split('·').slice(0, 2).join('·');
-  // 챙긴 개수 그대로 재고가 된다: 식량·물 재고 = 들여놓은 통조림·생수 개수
+  assert.match(need, /한 끼 = 통조림 ¼캔 · 물 ¼병/, '한 끼는 ¼캔·¼병');
+  // 통조림 1캔·생수 1병은 4번 나눠 먹는다
   const counted = await page.evaluate(() => ({ food: window.game.stock.food, water: window.game.stock.water }));
-  assert.equal(counted.food, scramble.items.filter((id) => id === 'canned').length, '통조림 1개 = 식량 1');
-  assert.equal(counted.water, scramble.items.filter((id) => id === 'water').length, '생수 1개 = 물 1');
+  assert.equal(counted.food, 4 * scramble.items.filter((id) => id === 'canned').length, '통조림 1캔 = 4끼');
+  assert.equal(counted.water, 4 * scramble.items.filter((id) => id === 'water').length, '생수 1병 = 4번');
+  // 일지 첫 쪽: 60초 동안 있었던 일
+  assert.equal(await text(page, '[data-ref="diary"] .page-day'), '1일차');
+  checks.firstPage = await text(page, '[data-ref="diary"] [data-part="recap"]');
+  assert.match(checks.firstPage, /60초/);
   const homeHtml = await page.content();
   assert.ok(!homeHtml.includes('마트에 남은 물자'), '마트 남은 물자는 보이지 않는다');
   assert.ok(!/실종 \d+%|부상 \d+%/.test(homeHtml), '탐사 확률은 보이지 않는다');
 
   let homeShot = false;
-  let pathShot = false;
   let reportShot = false;
-  let missionShot = false;
-  for (let guard = 0; guard < 60; guard++) {
+  let turnedPage = false;
+  for (let guard = 0; guard < 130; guard++) {
     screen = await waitScreen(page, 'home', 'ending');
     if (screen === 'ending') break;
+    const html = await page.content();
+    assert.ok(!/탈출 경로|탈출 계획|data-ref="paths"|data-ref="missions"/.test(html), '탈출 조건·미션 진행은 화면에 없다');
 
-    if (await page.$('[data-ref="report"]')) {
+    // 탐사에서 돌아온 소식은 일지의 아침 부분에 적힌다
+    if (await page.$('[data-ref="diary"] .entry.morning')) {
       checks.reports = (checks.reports ?? 0) + 1;
       if (!reportShot) {
         await shot('5-expedition-report', true);
         reportShot = true;
-        checks.firstReport = await text(page, '[data-ref="report"]');
+        checks.firstReport = await text(page, '[data-ref="diary"] .entry.morning');
       }
+    }
+
+    // 지난 쪽 넘겨 보기
+    const day = await page.evaluate(() => window.game.day);
+    if (!turnedPage && day >= 4) {
+      await page.click('[data-ref="diary"] [aria-label="이전 쪽"]');
+      assert.equal(await text(page, '[data-ref="diary"] .page-day'), `${day - 1}일차`, '한 쪽 앞으로 넘어간다');
+      await shot('4-journal-past-page');
+      await page.click('[data-ref="diary"] .back-today');
+      assert.equal(await text(page, '[data-ref="diary"] .page-day'), `${day}일차`, '오늘 쪽으로 돌아온다');
+      turnedPage = true;
     }
 
     // 오늘의 사건(덤으로 이어지는 미션 사건까지 모두)
@@ -191,19 +207,13 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
       }
     }
     if (ended) break;
-    if (await page.$('[data-ref="event"].quiet')) checks.quietNote = await text(page, '[data-ref="event"] .muted');
-    if (await page.$('[data-ref="missions"]')) {
-      checks.missions = await page.$$eval('[data-mission]', (els) => els.map((el) => el.dataset.mission));
-      if (!missionShot) {
-        await shot('6-missions', true);
-        missionShot = true;
-      }
-    }
 
-    if (!pathShot && (await page.$('.path.open:not(.mission)'))) {
-      await shot('4-path-open', true);
-      pathShot = true;
-      checks.pathNext = await text(page, '.path.open:not(.mission) .next');
+    // 마음이 가라앉은 식구와 이야기 나누기(버튼)
+    const talk = await strategy(page, 'talkTarget');
+    if (talk && (await page.$(`[data-action="talk"][data-person="${talk}"]:not([disabled])`))) {
+      await page.click(`[data-action="talk"][data-person="${talk}"]`);
+      checks.talks = (checks.talks ?? 0) + 1;
+      if (checks.talks === 1) await shot('6-talk', true);
     }
 
     // 탐사(라디오·체크박스·버튼). 무엇을 가져올지는 고를 수 없다.
@@ -212,7 +222,8 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
       assert.equal(await page.$('[data-ref="expedition"] select'), null, '찾아올 것을 고르는 칸이 없다');
       await page.click(`input[data-draft="memberId"][value="${plan.memberId}"]`);
       const weapon = await page.$('input[data-draft="withWeapon"]');
-      if (weapon && plan.withWeapon !== (await weapon.isChecked())) await weapon.click();
+      // 체크 상자는 그림 단추(label) 안에 숨겨져 있어 label을 누른다
+      if (weapon && plan.withWeapon !== (await weapon.isChecked())) await page.click('label:has(> input[data-draft="withWeapon"])');
       await page.click('[data-action="send-expedition"]');
       const exp = await page.evaluate(() => window.game.expedition);
       assert.equal(exp.memberId, plan.memberId, '고른 사람이 탐사를 떠났다');
@@ -243,7 +254,7 @@ async function playThrough(page, { baseUrl, seed, target, zombies, timescale, sh
         return order[0] ?? null;
       }, target);
       if (!diff) break;
-      await page.click(`input[data-action="ration"][data-person="${diff.id}"][data-kind="${diff.kind}"]`);
+      await page.click(`label:has(> input[data-action="ration"][data-person="${diff.id}"][data-kind="${diff.kind}"])`);
     }
 
     const beforeDay = await page.evaluate(() => ({
@@ -277,7 +288,8 @@ async function main() {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // 손글씨 글꼴(Google Fonts)을 못 받는 환경이면 기본 글꼴로 대신한다(오류로 치지 않는다)
+  page.on('console', (m) => m.type() === 'error' && !/fonts\.(googleapis|gstatic)\.com/.test(m.location()?.url ?? '') && errors.push(m.text()));
   page.on('dialog', (d) => d.accept());
   const results = [];
 

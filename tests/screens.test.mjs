@@ -64,7 +64,7 @@ test('일지: 아침마다 지난 하루를 정리한 쪽이 생기고, 지난 �
   assert.equal(game.journal.length, 2);
   assert.match(html, /<h2 class="page-day">2일차<\/h2>/);
   assert.match(html, /<b class="entry-title">생일<\/b> 작게, 좀비가 듣지 못할 만큼만 생일 노래를 불렀다/, '어제의 사건이 제목과 함께 적힌다');
-  assert.match(html, /저녁에 다 같이 통조림 ¾캔과 물 ¾병을 나눠 먹었다/);
+  assert.match(html, /저녁에 다 같이 통조림 ¾캔을 나눠 먹고 물 ¾병을 마셨다/);
   assert.match(html, /동생은 [^<]*말수가 부쩍 줄었다/, '마음 상태도 일기로 적힌다');
   assert.match(html, /data-action="talk" data-person="sis"/, '울적한 식구와 이야기를 나눌 수 있다');
   assert.match(html, /aria-label="이전 쪽"\s*>/, '지난 쪽으로 넘길 수 있다');
