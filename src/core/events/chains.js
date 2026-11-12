@@ -2,6 +2,7 @@
 // 모든 단계에는 항상 고를 수 있는 선택지가 있고, 그 선택지는 반드시 다음 일정(재시도·진행·종료)을 정한다.
 import { SERVINGS, formatAmount } from '../items.js';
 import { isCapable } from '../people.js';
+import { josa } from '../text.js';
 
 const CAN = SERVINGS;
 const tribute = (d) => `${formatAmount('food', d.food)}, ${formatAmount('water', d.water)}`;
@@ -120,7 +121,10 @@ const RESCUE = {
             ctx.take('flare', 1);
             ctx.chain.complete();
             ctx.win('rescue');
-            return '붉은 신호탄이 하늘을 갈랐다. 헬기가 옥상에 내려앉고, 모두가 줄사다리를 올랐다.';
+            const away = ctx.game.expedition ? ctx.game.person(ctx.game.expedition.memberId) : null;
+            return away
+              ? `붉은 신호탄이 하늘을 갈랐다. 헬기가 옥상에 내려앉았다. 탐사를 나간 ${josa(away.name, '을/를')} 끝내 기다리지 못하고 줄사다리를 올랐다.`
+              : '붉은 신호탄이 하늘을 갈랐다. 헬기가 옥상에 내려앉고, 모두가 줄사다리를 올랐다.';
           },
         },
         {
