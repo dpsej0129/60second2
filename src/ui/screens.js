@@ -1,5 +1,5 @@
 // 실시간 구간 밖의 화면들: 시작, 집 생존(하루 단위), 결말.
-import { EXPEDITION_DAYS, HUNGER_DEATH, RUN_SECONDS, THIRST_DEATH } from '../core/constants.js';
+import { HUNGER_DEATH, RUN_SECONDS, THIRST_DEATH } from '../core/constants.js';
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_ORDER } from '../core/difficulty.js';
 import { ACHIEVEMENTS } from '../core/achievements.js';
 import { ENDING_ORDER, ENDINGS, epilogue } from '../core/endings.js';
@@ -229,7 +229,7 @@ function expeditionSection(game, draft) {
     return `
       <section class="today-part expedition" data-ref="expedition">
         <h3>탐사</h3>
-        <p><b>${esc(josa(who.name, '이/가'))}</b> ${exp.departDay}일차에 ${exp.withWeapon ? '야구 방망이를 들고 ' : ''}밖으로 나갔다. 늦어도 ${exp.departDay + EXPEDITION_DAYS[1]}일차 아침이면 소식이 있을 것이다.</p>
+        <p><b>${esc(josa(who.name, '이/가'))}</b> ${exp.departDay}일차에 ${exp.withWeapon ? '야구 방망이를 들고 ' : ''}밖으로 나갔다. 늦어도 ${exp.departDay + game.difficulty.expedition.days[1]}일차 아침이면 소식이 있을 것이다.</p>
         <p class="muted small">밖에 나가 있는 사람은 먹지 않지만, 사건에서 도울 수 없다.</p>
       </section>`;
   }
@@ -259,7 +259,7 @@ function expeditionSection(game, draft) {
   return `
     <section class="today-part expedition" data-ref="expedition">
       <h3>탐사 보내기</h3>
-      <p class="muted small">한 명을 내보내 물자를 구해 오게 한다. 며칠 뒤 아침에 돌아온다. 무엇을 들고 올지는 알 수 없고, 다치거나 영영 돌아오지 못할 수도 있다.</p>
+      <p class="muted small">한 명을 내보내 물자를 구해 오게 한다. ${game.difficulty.expedition.days[0]}~${game.difficulty.expedition.days[1]}일쯤 뒤 아침에 돌아온다. 무엇을 들고 올지는 알 수 없고, 다치거나 영영 돌아오지 못할 수도 있다.</p>
       ${when(tired && !blocked, () => `<p class="warning" data-ref="tired">${esc(tired)}</p>`)}
       <div class="choices">${members}</div>
       ${when(

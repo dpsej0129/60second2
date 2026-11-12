@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { renderHome } from '../src/ui/screens.js';
 import { test } from 'node:test';
-import { EXPEDITION_DAYS } from '../src/core/constants.js';
-import { LOOT_WEIGHTS, expeditionRisk, rollItems, rollLoot } from '../src/core/expedition.js';
+import { DIFFICULTIES } from '../src/core/difficulty.js';
+import { LOOT_WEIGHTS, expeditionRisk, lootBonus, rollItems, rollLoot } from '../src/core/expedition.js';
 import { Game } from '../src/core/game.js';
 import { ITEMS } from '../src/core/items.js';
 import { Rng } from '../src/core/rng.js';
@@ -32,7 +32,9 @@ test('탐사를 보내면 그 사람은 집을 떠나 먹지 않고, 한 번에 
   assert.equal(game.rationCount('food'), 3, '탐사자 몫은 배급하지 않는다');
 });
 
-test(`탐사자는 ${EXPEDITION_DAYS[0]}~${EXPEDITION_DAYS[1]}일 뒤 아침에 돌아오고, 가져온 물품이 그대로 재고에 들어온다`, () => {
+const EXPEDITION_DAYS = DIFFICULTIES.hard.expedition.days;
+
+test(`탐사자는 (하드에서) ${EXPEDITION_DAYS[0]}~${EXPEDITION_DAYS[1]}일 뒤 아침에 돌아오고, 가져온 물품이 그대로 재고에 들어온다`, () => {
   const durations = new Set();
   let returned = 0;
   for (let seed = 1; seed <= 40; seed++) {
@@ -59,7 +61,8 @@ test(`탐사자는 ${EXPEDITION_DAYS[0]}~${EXPEDITION_DAYS[1]}일 뒤 아침에 
     returned += 1;
     assert.equal(game.person('dad').status, 'home');
     const slots = report.items.reduce((sum, id) => sum + ITEMS[id].slots, 0);
-    assert.ok(slots <= game.difficulty.expedition.capacity, `최대 ${game.difficulty.expedition.capacity}칸`);
+    const room = game.difficulty.expedition.capacity + lootBonus(days).slots; // 오래 나가 있었을수록 더 들고 온다
+    assert.ok(slots <= room, `최대 ${room}칸`);
     // 재고 변화 = 밤사이 소비 + 가져온 물품 + 길에서 주운 것
     const gained = { food: report.extra.food, water: report.extra.water };
     for (const id of report.items) for (const [k, n] of Object.entries(ITEMS[id].gives)) gained[k] = (gained[k] ?? 0) + n;
@@ -229,4 +232,48 @@ test('쉬지 않고 연달아 탐사를 보내면 다치거나 돌아오지 못�
   const rested = game.expeditionRisk('mom');
   assert.ok(rested.lost < risks[1].lost && rested.injury < risks[1].injury, '충분히 쉬면 연달아 보낼 때보다 덜 위험하다');
   assert.ok(rested.lost < fresh.lost * 1.5, '탐사를 여러 번 했다는 것만큼만 더 위험하다');
+});
+
+test('탐사 기간은 난이도에 따라 다르다: 이지 3~5일, 하드 4~7일, 아포칼립스 5~9일', () => {
+  assert.deepEqual(
+    ['easy', 'hard', 'apocalypse'].map((id) => DIFFICULTIES[id].expedition.days),
+    [
+      [3, 5],
+      [4, 7],
+      [5, 9],
+    ],
+  );
+  for (const difficulty of ['easy', 'hard', 'apocalypse']) {
+    const [min, max] = DIFFICULTIES[difficulty].expedition.days;
+    const seen = new Set();
+    for (let seed = 1; seed <= 40; seed++) {
+      const game = homeGame({ seed, difficulty, stock: { food: 80, water: 80 } });
+      game.director.pick = () => null;
+      game.sendExpedition({ memberId: 'dad' });
+      const away = game.expedition.returnDay - game.day;
+      assert.ok(away >= min && away <= max, `${difficulty} ${away}일`);
+      seen.add(away);
+    }
+    assert.equal(seen.size, max - min + 1, `${difficulty}: ${min}~${max}일이 모두 나온다`);
+    const game = homeGame({ seed: 3, difficulty, stock: { food: 80, water: 80 } });
+    game.director.pick = () => null;
+    assert.match(renderHome(game), new RegExp(`${min}~${max}일쯤 뒤 아침에 돌아온다`));
+    game.sendExpedition({ memberId: 'dad' });
+    assert.match(renderHome(game), new RegExp(`늦어도 ${game.day + max}일차 아침이면`));
+  }
+});
+
+test('오래 나가 있었을수록 더 많이 들고 온다', () => {
+  assert.deepEqual(lootBonus(3), { slots: 0, rounds: 1 });
+  assert.deepEqual(lootBonus(5), { slots: 1, rounds: 2 });
+  assert.deepEqual(lootBonus(9), { slots: 3, rounds: 3 });
+  const total = (days) => {
+    let n = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const loot = rollLoot({ rng: new Rng(seed), capacity: 3, found: [1, 3], days });
+      n += loot.items.length + loot.extra.food + loot.extra.water;
+    }
+    return n;
+  };
+  assert.ok(total(9) > total(5) * 1.2 && total(5) > total(3) * 1.2);
 });

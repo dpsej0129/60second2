@@ -82,10 +82,18 @@ export function rollItems({ rng, slots = EXPEDITION_CAPACITY, count = null, need
 }
 
 /** 탐사에서 가져오는 것: 가방에 담아 온 물품 + 길에서 주운 식량·물(나눠 먹는 단위, ¼캔씩) */
-export function rollLoot({ rng, capacity = EXPEDITION_CAPACITY, found = [1, 2], needs = [] }) {
-  const items = rollItems({ rng, slots: capacity, needs });
+/** 오래 나가 있을수록 더 멀리까지 뒤진다: 사흘을 넘긴 이틀마다 가방 1칸, 사흘마다 길에서 한 번 더 줍는다 */
+export function lootBonus(days = 3) {
+  return { slots: Math.floor(Math.max(0, days - 3) / 2), rounds: Math.max(1, Math.round(days / 3)) };
+}
+
+export function rollLoot({ rng, capacity = EXPEDITION_CAPACITY, found = [1, 2], needs = [], days = 3 }) {
+  const bonus = lootBonus(days);
+  const items = rollItems({ rng, slots: capacity + bonus.slots, needs });
   const extra = { food: 0, water: 0 };
-  const n = rng.int(found[0], found[1]);
-  for (let i = 0; i < n; i++) extra[rng.chance(0.5) ? 'food' : 'water'] += 1;
+  for (let round = 0; round < bonus.rounds; round++) {
+    const n = rng.int(found[0], found[1]);
+    for (let i = 0; i < n; i++) extra[rng.chance(0.5) ? 'food' : 'water'] += 1;
+  }
   return { items, extra };
 }

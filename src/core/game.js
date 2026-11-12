@@ -1,7 +1,6 @@
 // 게임 전체 흐름: 80초 탐색(물자·가족을 집으로) → 하루 단위 생존(사건·배급·탐사) → 결말.
 // 화면(DOM)과 분리되어 있어 테스트에서 그대로 조작할 수 있다.
 import {
-  EXPEDITION_DAYS,
   RUN_SECONDS,
   HEALTH_DEATH,
   HUNGER_DEATH,
@@ -397,7 +396,7 @@ export class Game {
     const p = this.person(memberId);
     const weapon = withWeapon && this.stock.weapon > 0;
     if (weapon) this.stock.weapon -= 1;
-    const [min, max] = EXPEDITION_DAYS;
+    const [min, max] = this.difficulty.expedition.days; // 난이도가 높을수록 오래 걸린다
     this.expedition = {
       memberId,
       withWeapon: weapon,
@@ -479,7 +478,7 @@ export class Game {
     p.hunger = Math.min(p.hunger + days, HUNGER_WEAK - 1);
     p.thirst = Math.min(p.thirst + days, THIRST_WEAK - 1);
     const { capacity, found } = this.difficulty.expedition;
-    const loot = rollLoot({ rng, capacity, found, needs: this.neededItems() });
+    const loot = rollLoot({ rng, capacity, found, needs: this.neededItems(), days });
     this.addItems(loot.items);
     this.stock.food += loot.extra.food;
     this.stock.water += loot.extra.water;
@@ -1035,7 +1034,7 @@ export class Game {
       // 마지막 단계(탈출하는 날)까지 탐사자가 못 돌아올 수도 있으면 미리 알린다.
       const exp = this.expedition;
       const lastStage = chain.stage === def.stages.length - 1;
-      if (exp && lastStage && chain.due != null && exp.departDay + EXPEDITION_DAYS[1] >= chain.due) {
+      if (exp && lastStage && chain.due != null && exp.departDay + this.difficulty.expedition.days[1] >= chain.due) {
         view.next += ` 탐사 중인 ${josa(this.person(exp.memberId).name, '이/가')} 그날까지 돌아오지 못하면 두고 가야 한다.`;
       }
       return view;
