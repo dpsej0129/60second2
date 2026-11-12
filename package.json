@@ -1,0 +1,15 @@
+{
+  "name": "60second2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "60초 안에 마트에서 물자를 챙겨 집으로 돌아오고, 그 선택의 결과를 감당하며 살아남는 생존 게임",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test",
+    "test:e2e": "node tests/e2e/playthrough.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
