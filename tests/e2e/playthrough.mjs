@@ -294,11 +294,13 @@ async function main() {
   const results = [];
 
   try {
-    // 1) 좀비 없이 세 경로를 끝까지 (흐름·조건 검증). 탐사에서 가족을 잃어 질 수도 있어 경로마다 시드 2개까지.
+    // 1) 좀비 없이 다섯 경로를 끝까지 (흐름·조건 검증). 탐사에서 가족을 잃어 질 수도 있어 경로마다 시드 2개까지.
     for (const [target, seeds] of [
       ['rescue', [101, 102]],
       ['group', [202, 203]],
       ['car', [303, 304]],
+      ['safezone', [404, 405]],
+      ['caravan', [505, 506]],
     ]) {
       let won = false;
       for (const seed of seeds) {
