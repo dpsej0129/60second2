@@ -51,6 +51,9 @@ export class RunView {
     this.onFinished = onFinished;
     this.keys = new Set();
     this.pointer = null;
+    this.stick = null; // 터치 조이스틱 방향 { x, y } (길이 0~1)
+    this.joy = null; // 조이스틱을 누르고 있는 손가락
+    this.touchUI = RunView.wantsTouch();
     this.pendingInteract = false;
     this.pendingDrop = null;
     this.destroyed = false;
@@ -63,13 +66,24 @@ export class RunView {
     this.mount();
   }
 
+  /** 터치 화면(휴대폰·태블릿)이면 조이스틱과 큰 버튼을 띄운다. ?touch=1 로 강제로 켤 수 있다. */
+  static wantsTouch() {
+    if (typeof window === 'undefined') return false;
+    if (new URLSearchParams(window.location.search).has('touch')) return true;
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+    return Boolean(coarse || navigator.maxTouchPoints > 0);
+  }
+
   // ── DOM ────────────────────────────────────
 
   mount() {
     const first = this.game.phase === 'ready';
+    const help = this.touchUI
+      ? '<b>왼쪽</b> 아무 곳이나 누른 채 끌면 조이스틱으로 이동 · <b>오른쪽 아래 버튼</b>으로 줍기·데려가기·들어가기 · 가방 칸을 누르면 내려놓기'
+      : '이동 <kbd>WASD</kbd>·<kbd>방향키</kbd> 또는 화면을 누른 채 끌기 · 줍기·데려가기 <kbd>E</kbd>/<kbd>Space</kbd> · 내려놓기 <kbd>1</kbd>~<kbd>4</kbd> 또는 가방 칸 누르기 · 집 앞에서 <kbd>E</kbd> = 문 잠그고 들어가기';
     this.root.innerHTML = `
-      <section class="run-screen" data-screen="run">
-        <div class="run-hud">
+      <section class="run-screen ${this.touchUI ? 'touch' : ''}" data-screen="run">
+        <div class="run-hud" data-ref="hud">
           <div class="hud-timer" data-ref="timerBox">
             <span class="hud-label">남은 시간</span>
             <span class="hud-time" data-ref="time">${this.duration.toFixed(1)}</span>
@@ -87,13 +101,19 @@ export class RunView {
           <canvas data-ref="canvas" aria-label="${esc(this.map.labels.indoor)}와 ${esc(this.map.labels.home)} 사이 지도"></canvas>
           <div class="run-prompt" data-ref="prompt" hidden></div>
           <div class="run-toasts" data-ref="toasts"></div>
+          <div class="touch-pad" data-ref="touchPad">
+            <div class="joy-zone" data-ref="joyZone" aria-label="조이스틱: 누른 채 끌어 이동">
+              <div class="joy-base" data-ref="joyBase"><div class="joy-knob" data-ref="joyKnob"></div></div>
+            </div>
+            <button type="button" class="touch-act" data-ref="actBtn" aria-label="줍기">줍기</button>
+          </div>
           <div class="run-overlay" data-ref="overlay" ${first ? '' : 'hidden'}>
             ${first ? this.briefingHtml() : ''}
           </div>
         </div>
         <div class="run-controls">
           <button type="button" class="btn" data-ref="pickBtn">줍기 <kbd>E</kbd></button>
-          <p class="run-help">이동 <kbd>WASD</kbd>·<kbd>방향키</kbd> 또는 화면을 누른 채 끌기 · 줍기·데려가기 <kbd>E</kbd>/<kbd>Space</kbd> · 내려놓기 <kbd>1</kbd>~<kbd>4</kbd> 또는 가방 칸 누르기 · 집 앞에서 <kbd>E</kbd> = 문 잠그고 들어가기</p>
+          <p class="run-help">${help}</p>
         </div>
       </section>`;
     this.refs = {};
@@ -126,6 +146,8 @@ export class RunView {
     this.refs.pickBtn.addEventListener('click', () => {
       this.pendingInteract = true;
     });
+    this.bindTouchPad();
+    this.refs.stage.addEventListener('contextmenu', (e) => e.preventDefault()); // 길게 눌러도 메뉴가 뜨지 않게
     this.refs.bag.addEventListener('click', (e) => {
       const cell = e.target.closest('[data-index]');
       if (cell) this.pendingDrop = Number(cell.dataset.index);
@@ -195,6 +217,78 @@ export class RunView {
     this.accumulator = 0;
   }
 
+  // ── 터치 조이스틱 ───────────────────────────
+  // 왼쪽 절반 아무 곳이나 누르면 그 자리에 조이스틱이 생기고, 끄는 방향으로 걷는다(많이 끌수록 빠르게).
+
+  bindTouchPad() {
+    const { joyZone, actBtn } = this.refs;
+    joyZone.addEventListener('pointerdown', (e) => {
+      if (this.joy) return;
+      e.preventDefault();
+      try {
+        joyZone.setPointerCapture(e.pointerId); // 손가락이 영역 밖으로 나가도 계속 따라간다
+      } catch {
+        /* 포인터를 붙잡을 수 없는 환경 */
+      }
+      const rect = joyZone.getBoundingClientRect();
+      this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY };
+      this.placeJoy(e.clientX - rect.left, e.clientY - rect.top, true);
+      this.moveJoy(e);
+    });
+    joyZone.addEventListener('pointermove', (e) => {
+      if (this.joy?.id === e.pointerId) this.moveJoy(e);
+    });
+    const end = (e) => {
+      if (this.joy?.id !== e.pointerId) return;
+      this.joy = null;
+      this.stick = null;
+      this.resetJoy();
+    };
+    joyZone.addEventListener('pointerup', end);
+    joyZone.addEventListener('pointercancel', end);
+    joyZone.addEventListener('lostpointercapture', end);
+    actBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (actBtn.disabled) return;
+      this.pendingInteract = true;
+      actBtn.classList.add('pressed');
+    });
+    const lift = () => actBtn.classList.remove('pressed');
+    actBtn.addEventListener('pointerup', lift);
+    actBtn.addEventListener('pointercancel', lift);
+    this.resetJoy();
+  }
+
+  /** 조이스틱 받침을 (x, y)(조이스틱 영역 기준 px)에 놓는다 */
+  placeJoy(x, y, active) {
+    const { joyBase, joyKnob } = this.refs;
+    joyBase.style.left = `${x}px`;
+    joyBase.style.top = `${y}px`;
+    joyBase.classList.toggle('active', active);
+    joyKnob.style.transform = 'translate(0px, 0px)';
+  }
+
+  /** 손을 떼면 받침은 왼쪽 아래 기본 자리로 돌아간다 */
+  resetJoy() {
+    const h = this.refs.joyZone.clientHeight || 300;
+    this.placeJoy(84, Math.max(84, h - 84), false);
+  }
+
+  moveJoy(e) {
+    const RADIUS = 56;
+    const dx = e.clientX - this.joy.ox;
+    const dy = e.clientY - this.joy.oy;
+    const d = Math.hypot(dx, dy);
+    const k = d > RADIUS ? RADIUS / d : 1;
+    this.refs.joyKnob.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+    if (d < 8) {
+      this.stick = null; // 살짝 대기만 하면 멈춰 있다
+      return;
+    }
+    const strength = Math.min(1, d / (RADIUS * 0.7)); // 받침의 70%만 끌어도 최고 속도
+    this.stick = { x: (dx / d) * strength, y: (dy / d) * strength };
+  }
+
   handleKey(e, down) {
     if (e.target instanceof HTMLInputElement) return;
     const code = e.code || e.key;
@@ -220,8 +314,17 @@ export class RunView {
     const { canvas, stage } = this.refs;
     const width = stage.clientWidth || 960;
     const narrow = width < 820;
-    this.viewW = narrow ? 860 : 1280;
-    this.viewH = Math.round((this.viewW * 9) / 16);
+    // 세로로 든 휴대폰: 좁고 긴 화면이니 지도를 더 크게, 위아래로 더 보이게
+    const portrait = width < 600 && window.innerHeight > window.innerWidth;
+    // 가로로 든 휴대폰: 남은 시간·가방 줄 아래로 지도가 화면 높이에 꼭 맞게
+    const landscape = this.touchUI && window.innerWidth > window.innerHeight && window.innerHeight < 600;
+    this.viewW = portrait ? 600 : narrow ? 860 : 1280;
+    this.viewH = portrait ? Math.min(WORLD.h, Math.round(this.viewW * 1.15)) : Math.round((this.viewW * 9) / 16);
+    if (landscape) {
+      const room = window.innerHeight - (this.refs.hud?.offsetHeight ?? 60) - 20;
+      this.viewW = 1000;
+      this.viewH = Math.max(300, Math.min(WORLD.h, Math.round((room * this.viewW) / width)));
+    }
     const cssH = Math.round(width * (this.viewH / this.viewW));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.style.height = `${cssH}px`;
@@ -229,6 +332,7 @@ export class RunView {
     canvas.height = Math.round(cssH * dpr);
     this.scale = (width * dpr) / this.viewW;
     this.cssScale = width / this.viewW;
+    if (this.refs.joyZone && !this.joy) this.resetJoy(); // 지도 높이가 바뀌면 조이스틱 자리도 다시
   }
 
   toWorld(e) {
@@ -260,6 +364,10 @@ export class RunView {
         mx = dx / d;
         my = dy / d;
       }
+    }
+    if (this.stick) {
+      mx = this.stick.x;
+      my = this.stick.y;
     }
     const input = { mx, my, interact: this.pendingInteract, drop: this.pendingDrop };
     this.pendingInteract = false;
@@ -368,6 +476,7 @@ export class RunView {
       goal.textContent = `목표: 물자와 가족을 ${place}로`;
       prompt.hidden = true;
       pickBtn.disabled = true;
+      this.refs.actBtn.disabled = true;
       return;
     }
 
@@ -408,6 +517,11 @@ export class RunView {
     const canAct = preview ? preview.stock > 0 && preview.canFit && !run.pickup : run.atHome;
     pickBtn.disabled = !canAct;
     pickBtn.innerHTML = !preview && run.atHome ? '문 잠그고 들어가기 <kbd>E</kbd>' : '줍기 <kbd>E</kbd>';
+    // 터치 버튼: 지금 할 수 있는 일을 짧게
+    const actLabel = !preview && run.atHome ? '들어가기' : preview?.item.kind === 'person' ? '데려가기' : '줍기';
+    if (this.refs.actBtn.textContent !== actLabel) this.refs.actBtn.textContent = actLabel;
+    this.refs.actBtn.disabled = !canAct;
+    this.refs.actBtn.classList.toggle('ready', canAct);
 
     const toastSig = run.toasts.map((t) => t.text).join('|');
     if (toastSig !== this.toastSignature) {
@@ -670,7 +784,7 @@ export class RunView {
 
   drawMinimap(run, p) {
     const { ctx } = this;
-    const w = 240;
+    const w = this.viewW < 700 ? 170 : 240;
     const h = (w * WORLD.h) / WORLD.w;
     const x0 = this.viewW - w - 12;
     const y0 = 12;
@@ -702,7 +816,9 @@ export class RunView {
       ctx.font = '11px sans-serif';
       const chasing = run.zombies.filter((z) => z.chasing).length;
       ctx.fillText(`좀비 ${run.zombies.length} · 추격 중 ${chasing}${inRect(p, this.map.indoor) ? ` · ${this.map.labels.inside}` : ''}`, x0, y0 + h + 16);
-      ctx.fillText(`시야 ${Math.round(zombieSight(run) / 10)}m`, x0 + w - 56, y0 + h + 16);
+      // 작은 미니맵에서는 시야를 다음 줄에 적어 겹치지 않게
+      if (w < 200) ctx.fillText(`시야 ${Math.round(zombieSight(run) / 10)}m`, x0, y0 + h + 30);
+      else ctx.fillText(`시야 ${Math.round(zombieSight(run) / 10)}m`, x0 + w - 56, y0 + h + 16);
     }
   }
 }

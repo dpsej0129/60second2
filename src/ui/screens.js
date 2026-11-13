@@ -50,7 +50,7 @@ export function renderTitle({ seed, difficulty = DEFAULT_DIFFICULTY, discovered 
           <button type="submit" class="btn primary big">게임 시작</button>
         </div>
       </form>
-      <p class="muted small">조작: 이동 WASD·방향키(또는 화면을 누른 채 끌기) · 줍기 E/Space · 내려놓기 1~4</p>
+      <p class="muted small">조작: 이동 WASD·방향키 · 줍기 E/Space · 내려놓기 1~4 · <b>휴대폰·태블릿</b>: 화면 왼쪽을 누른 채 끄는 조이스틱으로 이동, 오른쪽 아래 버튼으로 줍기</p>
       ${renderCodex(discovered)}
       ${renderAchievements(achievements)}
     </section>`;

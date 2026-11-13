@@ -16,8 +16,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.E2E_OUT ?? join(here, 'output');
 
 let chromium;
+let devices;
 try {
-  ({ chromium } = createRequire(import.meta.url)('playwright'));
+  ({ chromium, devices } = createRequire(import.meta.url)('playwright'));
 } catch {
   console.log('playwright를 찾을 수 없어 E2E 검증을 건너뜁니다.');
   process.exit(0);
@@ -404,6 +405,43 @@ async function main() {
     assert.deepEqual(new Set(codex), seen, '본 결말이 도감에 남는다');
     log(`[결말 도감] ${codex.length}/16: ${codex.join(', ')}`);
     await page.screenshot({ path: join(OUT, 'title-codex.png'), fullPage: true });
+
+    // 5) 휴대폰(터치): 왼쪽을 누른 채 끄는 조이스틱으로 움직이고, 오른쪽 아래 버튼으로 줍는다
+    const phone = await browser.newContext({ ...devices['iPhone 13'] });
+    const mobile = await phone.newPage();
+    mobile.on('pageerror', (e) => errors.push(e.message));
+    await mobile.goto(`${baseUrl}/?seed=7&debug=1&zombies=off`);
+    await mobile.tap('button[type=submit]');
+    await mobile.waitForSelector('[data-screen="run"].touch');
+    await mobile.tap('[data-action="start-run"]'); // 시작 안내가 조이스틱보다 위에 있어 누를 수 있다
+    const cdp = await phone.newCDPSession(mobile);
+    const zone = await mobile.$eval('[data-ref="joyZone"]', (el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left + 80, y: r.bottom - 80 };
+    });
+    const start = await mobile.evaluate(() => ({ ...window.game.run.player }));
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: zone.x, y: zone.y, id: 1 }] });
+    for (let i = 1; i <= 6; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: zone.x + i * 10, y: zone.y, id: 1 }] });
+      await mobile.waitForTimeout(30);
+    }
+    await mobile.waitForTimeout(600);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const moved = await mobile.evaluate(() => ({ ...window.game.run.player }));
+    assert.ok(moved.x - start.x > 60, `조이스틱을 오른쪽으로 끌면 오른쪽으로 걷는다 (${(moved.x - start.x).toFixed(0)})`);
+    await mobile.evaluate(async () => {
+      const { standPoint } = await import('/tests/helpers/bot.mjs');
+      const game = window.game;
+      const p = standPoint(game.run.map.shelves.find((sh) => sh.itemId === 'water'), game.run.player);
+      Object.assign(game.run.player, { x: p.x, y: p.y });
+    });
+    await mobile.waitForTimeout(150);
+    await mobile.tap('[data-ref="actBtn"]');
+    await mobile.waitForTimeout(600);
+    assert.deepEqual(await mobile.evaluate(() => window.game.inventory.items), ['water'], '오른쪽 아래 버튼으로 줍는다');
+    await mobile.screenshot({ path: join(OUT, 'mobile-run.png') });
+    log('[휴대폰] 조이스틱 이동·버튼 줍기 확인');
+    await phone.close();
 
     assert.deepEqual(errors, [], '브라우저 콘솔 오류 없음');
     log('\nE2E 결과', JSON.stringify(results));
